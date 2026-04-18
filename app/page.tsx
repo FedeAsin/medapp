@@ -30,17 +30,6 @@ interface DoseItem {
   taken: boolean
 }
 
-interface ChatMessage {
-  id: string
-  role: 'user' | 'assistant'
-  text: string
-}
-
-interface ApiMessage {
-  role: 'user' | 'assistant'
-  content: string
-}
-
 interface ScanResult {
   name?: string
   dose?: string
@@ -56,14 +45,6 @@ type AuthState = 'loading' | 'unauthenticated' | 'authenticated'
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const STOCK_MAX = 30
-
-const QUICK_QUESTIONS = ['¿Puedo tomar ibuprofeno?', '¿Qué hace el Enalapril?', 'Olvidé una dosis']
-
-const INITIAL_MESSAGES: ChatMessage[] = [{
-  id: 'init',
-  role: 'assistant',
-  text: 'Hola, soy tu asistente de medicación. Tengo acceso a tu lista de medicamentos y puedo ayudarte con dudas. ¿En qué puedo ayudarte?',
-}]
 
 const PRESET_COLORS = ['#1D9E75', '#378ADD', '#D85A30', '#BA7517', '#9B59B6', '#E74C3C', '#2ECC71', '#F39C12']
 
@@ -143,12 +124,6 @@ function IconPill({ active }: { active: boolean }) {
 function IconScan({ active }: { active: boolean }) {
   return <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active ? 2.5 : 1.8} strokeLinecap="round" strokeLinejoin="round"><path d="M3 7V5a2 2 0 0 1 2-2h2" /><path d="M17 3h2a2 2 0 0 1 2 2v2" /><path d="M21 17v2a2 2 0 0 1-2 2h-2" /><path d="M7 21H5a2 2 0 0 1-2-2v-2" /><line x1="7" y1="12" x2="17" y2="12" /></svg>
 }
-function IconChat({ active }: { active: boolean }) {
-  return <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active ? 2.5 : 1.8} strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
-}
-function IconSend() {
-  return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>
-}
 function IconEdit() {
   return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
 }
@@ -166,7 +141,6 @@ const TABS = [
   { id: 'hoy',        label: 'Hoy',        Icon: IconCalendar },
   { id: 'medicacion', label: 'Medicación', Icon: IconPill },
   { id: 'escanear',   label: 'Escanear',   Icon: IconScan },
-  { id: 'asistente',  label: 'Asistente',  Icon: IconChat },
 ]
 
 // ─── Shared ───────────────────────────────────────────────────────────────────
@@ -851,124 +825,6 @@ function ScanView({ userId, onMedAdded }: { userId: string; onMedAdded: () => vo
   )
 }
 
-// ─── ASISTENTE view ───────────────────────────────────────────────────────────
-
-function TypingIndicator() {
-  return (
-    <div className="flex items-end gap-2 mb-2">
-      <div className="w-7 h-7 rounded-full bg-[#1D9E75]/15 flex items-center justify-center shrink-0"><span className="text-[14px]">🤖</span></div>
-      <div className="bg-white dark:bg-zinc-800 rounded-2xl rounded-bl-sm px-4 py-3 shadow-sm">
-        <span className="typing-dot text-zinc-400 text-xl leading-none">•</span>
-        <span className="typing-dot text-zinc-400 text-xl leading-none mx-0.5">•</span>
-        <span className="typing-dot text-zinc-400 text-xl leading-none">•</span>
-      </div>
-    </div>
-  )
-}
-
-function ChatBubble({ msg }: { msg: ChatMessage }) {
-  const isUser = msg.role === 'user'
-  return (
-    <div className={['flex items-end gap-2 mb-2', isUser ? 'flex-row-reverse' : ''].join(' ')}>
-      {!isUser && <div className="w-7 h-7 rounded-full bg-[#1D9E75]/15 flex items-center justify-center shrink-0"><span className="text-[14px]">🤖</span></div>}
-      <div className={['max-w-[78%] px-4 py-2.5 rounded-2xl shadow-sm text-[14px] leading-relaxed', isUser ? 'bg-[#1D9E75] text-white rounded-br-sm' : 'bg-white dark:bg-zinc-800 text-zinc-800 dark:text-zinc-100 rounded-bl-sm'].join(' ')}>
-        {msg.text}
-      </div>
-    </div>
-  )
-}
-
-function AsistenteView({ medications }: { medications: Medication[] }) {
-  const [displayMessages, setDisplayMessages] = useState<ChatMessage[]>(INITIAL_MESSAGES)
-  const [apiHistory, setApiHistory] = useState<ApiMessage[]>([])
-  const [input, setInput] = useState('')
-  const [isStreaming, setIsStreaming] = useState(false)
-  const [quickUsed, setQuickUsed] = useState(false)
-  const [streamingText, setStreamingText] = useState('')
-  const bottomRef = useRef<HTMLDivElement>(null)
-  const abortRef = useRef<AbortController | null>(null)
-
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [displayMessages, isStreaming, streamingText])
-
-  async function sendMessage(text: string) {
-    const trimmed = text.trim()
-    if (!trimmed || isStreaming) return
-
-    setInput(''); setQuickUsed(true)
-    const userMsg: ChatMessage = { id: Date.now().toString(), role: 'user', text: trimmed }
-    setDisplayMessages((prev) => [...prev, userMsg])
-    const newHistory: ApiMessage[] = [...apiHistory, { role: 'user', content: trimmed }]
-    setApiHistory(newHistory)
-    setIsStreaming(true); setStreamingText('')
-
-    const abort = new AbortController()
-    abortRef.current = abort
-
-    try {
-      const res = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: newHistory, medications }),
-        signal: abort.signal,
-      })
-      if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`)
-
-      const reader = res.body.getReader()
-      const decoder = new TextDecoder()
-      let fullText = ''
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        fullText += decoder.decode(value, { stream: true })
-        setStreamingText(fullText)
-      }
-
-      setDisplayMessages((prev) => [...prev, { id: (Date.now() + 1).toString(), role: 'assistant', text: fullText || 'No pude generar una respuesta. Intentá de nuevo.' }])
-      setApiHistory((prev) => [...prev, { role: 'assistant', content: fullText }])
-    } catch (err: unknown) {
-      if (err instanceof Error && err.name === 'AbortError') return
-      setDisplayMessages((prev) => [...prev, { id: (Date.now() + 1).toString(), role: 'assistant', text: 'No pude conectarme. Revisá tu conexión e intentá de nuevo.' }])
-    } finally {
-      setIsStreaming(false); setStreamingText(''); abortRef.current = null
-    }
-  }
-
-  return (
-    <div className="flex-1 flex flex-col overflow-hidden">
-      <div className="px-4 pt-8 pb-4 shrink-0">
-        <PageHeader title="Asistente" subtitle="Con contexto de tu medicación actual" />
-      </div>
-      <div className="flex-1 overflow-y-auto px-4 pb-4">
-        {displayMessages.map((msg, i) => (
-          <div key={msg.id}>
-            <ChatBubble msg={msg} />
-            {i === 0 && !quickUsed && (
-              <div className="flex flex-wrap gap-2 mb-4 pl-9">
-                {QUICK_QUESTIONS.map((q) => (
-                  <button key={q} onClick={() => sendMessage(q)} className="text-[12px] font-medium px-3 py-1.5 rounded-full border border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 bg-white dark:bg-zinc-800 shadow-sm transition-colors hover:border-[#1D9E75] hover:text-[#1D9E75] active:scale-[0.97]">{q}</button>
-                ))}
-              </div>
-            )}
-          </div>
-        ))}
-        {isStreaming && streamingText === '' && <TypingIndicator />}
-        {isStreaming && streamingText !== '' && <ChatBubble msg={{ id: 'streaming', role: 'assistant', text: streamingText }} />}
-        <div ref={bottomRef} />
-      </div>
-      <div className="shrink-0 px-4 pb-[76px] pt-2 bg-[#F6F5F0]/90 dark:bg-zinc-950/90 backdrop-blur-sm border-t border-zinc-200/60 dark:border-zinc-800/60">
-        <form onSubmit={(e) => { e.preventDefault(); sendMessage(input) }} className="flex items-center gap-2">
-          <input type="text" value={input} onChange={(e) => setInput(e.target.value)} placeholder="Escribí tu consulta..."
-            className="flex-1 h-11 px-4 rounded-xl bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-[14px] text-zinc-800 dark:text-zinc-100 placeholder-zinc-400 outline-none focus:border-[#1D9E75] transition-colors shadow-sm" />
-          <button type="submit" disabled={!input.trim() || isStreaming}
-            className="w-11 h-11 rounded-xl bg-[#1D9E75] text-white flex items-center justify-center transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed shadow-sm">
-            <IconSend />
-          </button>
-        </form>
-      </div>
-    </div>
-  )
-}
-
 // ─── Tab bar ──────────────────────────────────────────────────────────────────
 
 function TabBar({ active, onChange }: { active: string; onChange: (id: string) => void }) {
@@ -1087,7 +943,6 @@ export default function HomePage() {
           {activeTab === 'hoy'        && <HoyView medications={medications} doses={doses} onToggle={toggle} />}
           {activeTab === 'medicacion' && <MedicacionView medications={medications} userId={user!.id} onRefresh={() => loadData(user!.id)} onSignOut={handleSignOut} />}
           {activeTab === 'escanear'   && <ScanView userId={user!.id} onMedAdded={() => loadData(user!.id)} />}
-          {activeTab === 'asistente'  && <AsistenteView medications={medications} />}
         </main>
         <TabBar active={activeTab} onChange={setActiveTab} />
       </div>
