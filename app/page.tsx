@@ -36,14 +36,26 @@ interface ChatMessage {
   text: string
 }
 
-type ScanState = 'idle' | 'loading' | 'result'
+interface ApiMessage {
+  role: 'user' | 'assistant'
+  content: string
+}
+
+interface ScanResult {
+  name?: string
+  dose?: string
+  activeIngredient?: string
+  laboratory?: string
+  instructions?: string
+  error?: string
+}
+
+type ScanState = 'idle' | 'loading' | 'result' | 'error'
 type AuthState = 'loading' | 'unauthenticated' | 'authenticated'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const STOCK_MAX = 30
-
-const SCAN_RESULT = { comercial: 'Losartán', activo: 'Losartán potásico', dosis: '50mg', laboratorio: 'Roemmers' }
 
 const QUICK_QUESTIONS = ['¿Puedo tomar ibuprofeno?', '¿Qué hace el Enalapril?', 'Olvidé una dosis']
 
@@ -54,6 +66,8 @@ const INITIAL_MESSAGES: ChatMessage[] = [{
 }]
 
 const PRESET_COLORS = ['#1D9E75', '#378ADD', '#D85A30', '#BA7517', '#9B59B6', '#E74C3C', '#2ECC71', '#F39C12']
+
+const WEEKDAY_LABELS = ['L', 'M', 'X', 'J', 'V', 'S', 'D']
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -83,17 +97,6 @@ function frequencyLabel(times: string[]): string {
   return n === 1 ? '1 vez al día' : `${n} veces al día`
 }
 
-function getResponse(q: string): string {
-  const lq = q.toLowerCase()
-  if (lq.includes('ibuprofeno'))
-    return 'Tomás Enalapril para la presión. El ibuprofeno puede reducir su efecto. Para dolor ocasional, el paracetamol es más seguro. Consultá con tu médico. ⚠️ No soy un médico.'
-  if (lq.includes('enalapril'))
-    return 'El Enalapril es un inhibidor de la ECA para hipertensión. Lo tomás a las 8:00 AM en ayunas (10mg). Evitá exceso de potasio y no lo suspendas sin consultar.'
-  if (lq.includes('olvidé') || lq.includes('olvide') || lq.includes('dosis'))
-    return 'Depende del medicamento y cuánto tiempo pasó. Si fue hace menos de 4 horas, generalmente podés tomarla. Si pasó más tiempo, esperá a la próxima. Nunca dupliques la dosis. ⚠️ Consultá con tu médico.'
-  return 'No tengo información específica sobre eso. Te recomiendo consultar con tu médico o farmacéutico. ⚠️ No soy un médico.'
-}
-
 function getGreeting(): string {
   const h = new Date().getHours()
   if (h >= 6 && h < 12) return 'Buenos días'
@@ -104,6 +107,29 @@ function getGreeting(): string {
 function getDateLabel(): string {
   const raw = new Date().toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' })
   return raw.charAt(0).toUpperCase() + raw.slice(1)
+}
+
+// Calendar: build grid cells for last ~5 weeks aligned to Mon-Sun
+function buildCalendarCells(): Array<{ date: string; isToday: boolean } | null> {
+  const today = new Date()
+  const todayIso = today.toISOString().split('T')[0]
+  const todayDow = (today.getDay() + 6) % 7 // 0=Mon … 6=Sun
+
+  // Go back to Monday of 4 complete weeks ago
+  const cells: Array<{ date: string; isToday: boolean } | null> = []
+  const totalPast = todayDow + 28 // cells from that Monday to today (inclusive)
+
+  for (let i = totalPast; i >= 0; i--) {
+    const d = new Date(today)
+    d.setDate(today.getDate() - i)
+    cells.push({ date: d.toISOString().split('T')[0], isToday: i === 0 })
+  }
+
+  // Pad right with nulls to fill last row
+  const rem = cells.length % 7
+  if (rem !== 0) for (let i = 0; i < 7 - rem; i++) cells.push(null)
+
+  return cells
 }
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
@@ -123,11 +149,17 @@ function IconChat({ active }: { active: boolean }) {
 function IconSend() {
   return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>
 }
-function IconCamera() {
-  return <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" /><circle cx="12" cy="13" r="4" /></svg>
+function IconEdit() {
+  return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
+}
+function IconTrash() {
+  return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6" /><path d="M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></svg>
 }
 function IconCheck() {
   return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+}
+function IconCamera() {
+  return <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" /><circle cx="12" cy="13" r="4" /></svg>
 }
 
 const TABS = [
@@ -163,7 +195,7 @@ function Field({ label, children, className }: { label: string; children: React.
   )
 }
 
-// ─── Login / Register view ────────────────────────────────────────────────────
+// ─── Login / Register ─────────────────────────────────────────────────────────
 
 function LoginView() {
   const [isSignUp, setIsSignUp] = useState(false)
@@ -175,8 +207,7 @@ function LoginView() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    setError('')
-    setSuccessMsg('')
+    setError(''); setSuccessMsg('')
     if (!email.trim() || !password) { setError('Completá email y contraseña.'); return }
     setLoading(true)
     if (isSignUp) {
@@ -193,77 +224,28 @@ function LoginView() {
   return (
     <div className="min-h-dvh bg-[#F6F5F0] dark:bg-zinc-950 flex items-center justify-center px-5">
       <div className="w-full max-w-[360px]">
-        {/* Logo / Brand */}
         <div className="flex flex-col items-center mb-8">
           <div className="w-16 h-16 rounded-2xl bg-[#1D9E75] flex items-center justify-center mb-4 shadow-lg">
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M10.5 20.5 3.5 13.5a5 5 0 0 1 7.07-7.07l7 7a5 5 0 0 1-7.07 7.07Z" />
-              <line x1="8.5" y1="11.5" x2="15.5" y2="11.5" />
-            </svg>
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M10.5 20.5 3.5 13.5a5 5 0 0 1 7.07-7.07l7 7a5 5 0 0 1-7.07 7.07Z" /><line x1="8.5" y1="11.5" x2="15.5" y2="11.5" /></svg>
           </div>
           <h1 className="text-[26px] font-bold tracking-tight text-zinc-800 dark:text-zinc-100">MedApp</h1>
           <p className="text-[14px] text-zinc-400 dark:text-zinc-500 mt-1">Tu medicación, organizada</p>
         </div>
-
-        {/* Card */}
         <div className="bg-white dark:bg-zinc-900 rounded-3xl p-6 shadow-sm">
-          <h2 className="text-[17px] font-semibold text-zinc-800 dark:text-zinc-100 mb-5">
-            {isSignUp ? 'Crear cuenta' : 'Iniciar sesión'}
-          </h2>
-
+          <h2 className="text-[17px] font-semibold text-zinc-800 dark:text-zinc-100 mb-5">{isSignUp ? 'Crear cuenta' : 'Iniciar sesión'}</h2>
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-            <Field label="Email">
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="tu@email.com"
-                autoComplete="email"
-                className={inputCls}
-              />
-            </Field>
-
-            <Field label="Contraseña">
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder={isSignUp ? 'Mínimo 6 caracteres' : '••••••••'}
-                autoComplete={isSignUp ? 'new-password' : 'current-password'}
-                className={inputCls}
-              />
-            </Field>
-
-            {error && (
-              <p className="text-[13px] text-red-500 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800/50 rounded-xl px-3 py-2.5">
-                {error}
-              </p>
-            )}
-            {successMsg && (
-              <p className="text-[13px] text-[#1D9E75] bg-[#1D9E75]/8 border border-[#1D9E75]/25 rounded-xl px-3 py-2.5">
-                {successMsg}
-              </p>
-            )}
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full py-3.5 rounded-xl bg-[#1D9E75] text-white text-[15px] font-semibold mt-1 transition-all active:scale-[0.98] disabled:opacity-50 shadow-sm"
-            >
+            <Field label="Email"><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="tu@email.com" autoComplete="email" className={inputCls} /></Field>
+            <Field label="Contraseña"><input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder={isSignUp ? 'Mínimo 6 caracteres' : '••••••••'} autoComplete={isSignUp ? 'new-password' : 'current-password'} className={inputCls} /></Field>
+            {error && <p className="text-[13px] text-red-500 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800/50 rounded-xl px-3 py-2.5">{error}</p>}
+            {successMsg && <p className="text-[13px] text-[#1D9E75] bg-[#1D9E75]/8 border border-[#1D9E75]/25 rounded-xl px-3 py-2.5">{successMsg}</p>}
+            <button type="submit" disabled={loading} className="w-full py-3.5 rounded-xl bg-[#1D9E75] text-white text-[15px] font-semibold mt-1 transition-all active:scale-[0.98] disabled:opacity-50 shadow-sm">
               {loading ? 'Cargando…' : isSignUp ? 'Crear cuenta' : 'Iniciar sesión'}
             </button>
           </form>
         </div>
-
-        {/* Toggle mode */}
         <p className="text-center text-[13px] text-zinc-400 dark:text-zinc-500 mt-5">
           {isSignUp ? '¿Ya tenés cuenta?' : '¿No tenés cuenta?'}{' '}
-          <button
-            onClick={() => { setIsSignUp(!isSignUp); setError(''); setSuccessMsg('') }}
-            className="text-[#1D9E75] font-semibold"
-          >
-            {isSignUp ? 'Iniciar sesión' : 'Crear cuenta'}
-          </button>
+          <button onClick={() => { setIsSignUp(!isSignUp); setError(''); setSuccessMsg('') }} className="text-[#1D9E75] font-semibold">{isSignUp ? 'Iniciar sesión' : 'Crear cuenta'}</button>
         </p>
       </div>
     </div>
@@ -282,9 +264,7 @@ function ProgressRing({ taken, total }: { taken: number; total: number }) {
         <circle cx={SIZE/2} cy={SIZE/2} r={R} fill="none" stroke="#1D9E75" strokeWidth={SW} strokeDasharray={C} strokeDashoffset={offset} strokeLinecap="round" style={{ transition: 'stroke-dashoffset 0.5s ease' }} />
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <span className="text-[22px] font-bold leading-none text-zinc-800 dark:text-zinc-100">
-          {taken}<span className="text-sm font-normal text-zinc-400">/{total}</span>
-        </span>
+        <span className="text-[22px] font-bold leading-none text-zinc-800 dark:text-zinc-100">{taken}<span className="text-sm font-normal text-zinc-400">/{total}</span></span>
         <span className="text-[11px] text-zinc-400 mt-0.5">dosis</span>
       </div>
     </div>
@@ -316,9 +296,15 @@ function DoseCard({ dose, onToggle }: { dose: DoseItem; onToggle: (id: string) =
 
 // ─── Medication card ──────────────────────────────────────────────────────────
 
-function MedicationCard({ med }: { med: Medication }) {
+function MedicationCard({ med, onEdit, onDelete }: {
+  med: Medication
+  onEdit: (med: Medication) => void
+  onDelete: (id: string) => void
+}) {
+  const [confirmDelete, setConfirmDelete] = useState(false)
   const lowStock = med.stock < med.stock_min
   const pct = Math.min(med.stock / STOCK_MAX, 1)
+
   return (
     <div className="bg-white dark:bg-zinc-800 rounded-2xl px-4 py-4 shadow-sm">
       <div className="flex items-start gap-3">
@@ -336,7 +322,18 @@ function MedicationCard({ med }: { med: Medication }) {
           </div>
           {med.instructions && <p className="text-[12px] text-zinc-400 mt-0.5 leading-snug">📋 {med.instructions}</p>}
         </div>
+        {/* Edit / Delete */}
+        <div className="flex gap-1 shrink-0">
+          <button onClick={() => onEdit(med)} className="w-7 h-7 rounded-lg flex items-center justify-center text-zinc-400 hover:text-[#378ADD] hover:bg-[#378ADD]/10 transition-colors" aria-label="Editar">
+            <IconEdit />
+          </button>
+          <button onClick={() => setConfirmDelete(true)} className="w-7 h-7 rounded-lg flex items-center justify-center text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors" aria-label="Eliminar">
+            <IconTrash />
+          </button>
+        </div>
       </div>
+
+      {/* Stock bar */}
       <div className="mt-3.5">
         <div className="flex items-center justify-between mb-1.5">
           <span className="text-[11px] font-medium text-zinc-400 dark:text-zinc-500 uppercase tracking-wide">Stock</span>
@@ -348,55 +345,59 @@ function MedicationCard({ med }: { med: Medication }) {
           <div className={['h-full rounded-full transition-all duration-500', lowStock ? 'bg-red-400' : 'bg-[#1D9E75]'].join(' ')} style={{ width: `${pct * 100}%` }} />
         </div>
       </div>
+
+      {/* Confirm delete */}
+      {confirmDelete && (
+        <div className="mt-3 pt-3 border-t border-zinc-100 dark:border-zinc-700 flex items-center justify-between">
+          <p className="text-[13px] text-zinc-600 dark:text-zinc-300">¿Eliminar este medicamento?</p>
+          <div className="flex gap-2">
+            <button onClick={() => setConfirmDelete(false)} className="text-[12px] font-medium text-zinc-400 px-3 py-1.5 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors">Cancelar</button>
+            <button onClick={() => onDelete(med.id)} className="text-[12px] font-medium text-white bg-red-500 px-3 py-1.5 rounded-lg hover:bg-red-600 transition-colors">Eliminar</button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
 
-// ─── Add medication form ──────────────────────────────────────────────────────
+// ─── Add / Edit med form ──────────────────────────────────────────────────────
 
-interface AddMedFormData {
-  name: string
-  dose: string
-  times: string[]
-  instructions: string
-  stock: string
-  stock_min: string
-  color: string
+interface MedFormData {
+  name: string; dose: string; times: string[]; instructions: string
+  stock: string; stock_min: string; color: string
 }
 
-function AddMedSheet({ userId, onClose, onSaved }: { userId: string; onClose: () => void; onSaved: () => void }) {
-  const [form, setForm] = useState<AddMedFormData>({
-    name: '', dose: '', times: ['08:00'], instructions: '', stock: '30', stock_min: '5', color: PRESET_COLORS[0],
+function MedSheet({ userId, editMed, onClose, onSaved }: {
+  userId: string
+  editMed?: Medication | Partial<Medication>
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const isEdit = !!(editMed as Medication)?.id
+
+  const [form, setForm] = useState<MedFormData>({
+    name: editMed?.name ?? '',
+    dose: editMed?.dose ?? '',
+    times: editMed?.times ?? ['08:00'],
+    instructions: editMed?.instructions ?? '',
+    stock: String(editMed?.stock ?? 30),
+    stock_min: String(editMed?.stock_min ?? 5),
+    color: editMed?.color ?? PRESET_COLORS[0],
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
-  function setField(key: keyof AddMedFormData, value: string) {
-    setForm((f) => ({ ...f, [key]: value }))
-  }
-
-  function setTime(i: number, value: string) {
-    setForm((f) => {
-      const times = [...f.times]
-      times[i] = value
-      return { ...f, times }
-    })
-  }
-
-  function addTime() {
-    setForm((f) => ({ ...f, times: [...f.times, '12:00'] }))
-  }
-
-  function removeTime(i: number) {
-    setForm((f) => ({ ...f, times: f.times.filter((_, idx) => idx !== i) }))
-  }
+  function setField(key: keyof MedFormData, value: string) { setForm((f) => ({ ...f, [key]: value })) }
+  function setTime(i: number, value: string) { setForm((f) => { const times = [...f.times]; times[i] = value; return { ...f, times } }) }
+  function addTime() { setForm((f) => ({ ...f, times: [...f.times, '12:00'] })) }
+  function removeTime(i: number) { setForm((f) => ({ ...f, times: f.times.filter((_, idx) => idx !== i) })) }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!form.name.trim() || !form.dose.trim()) { setError('Nombre y dosis son obligatorios.'); return }
-    setSaving(true)
-    setError('')
-    const { error: err } = await supabase.from('medications').insert({
+    setSaving(true); setError('')
+
+    const payload = {
       name: form.name.trim(),
       dose: form.dose.trim(),
       frequency: frequencyLabel(form.times),
@@ -405,9 +406,15 @@ function AddMedSheet({ userId, onClose, onSaved }: { userId: string; onClose: ()
       stock: parseInt(form.stock) || 0,
       stock_min: parseInt(form.stock_min) || 5,
       color: form.color,
-      active: true,
-      user_id: userId,
-    })
+    }
+
+    let err
+    if (isEdit) {
+      ;({ error: err } = await supabase.from('medications').update(payload).eq('id', (editMed as Medication).id).eq('user_id', userId))
+    } else {
+      ;({ error: err } = await supabase.from('medications').insert({ ...payload, active: true, user_id: userId }))
+    }
+
     setSaving(false)
     if (err) { setError('Error al guardar. Intentá de nuevo.'); return }
     onSaved()
@@ -415,66 +422,178 @@ function AddMedSheet({ userId, onClose, onSaved }: { userId: string; onClose: ()
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center" style={{ background: 'rgba(0,0,0,0.4)' }} onClick={onClose}>
-      <div
-        className="w-full max-w-[390px] bg-white dark:bg-zinc-900 rounded-t-3xl px-5 pt-5 pb-10 max-h-[90dvh] overflow-y-auto"
-        onClick={(e) => e.stopPropagation()}
-      >
+      <div className="w-full max-w-[390px] bg-white dark:bg-zinc-900 rounded-t-3xl px-5 pt-5 pb-10 max-h-[90dvh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="w-10 h-1 bg-zinc-200 dark:bg-zinc-700 rounded-full mx-auto mb-5" />
-        <h2 className="text-[18px] font-bold text-zinc-800 dark:text-zinc-100 mb-5">Agregar medicamento</h2>
+        <h2 className="text-[18px] font-bold text-zinc-800 dark:text-zinc-100 mb-5">{isEdit ? 'Editar medicamento' : 'Agregar medicamento'}</h2>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-          <Field label="Nombre">
-            <input value={form.name} onChange={(e) => setField('name', e.target.value)} placeholder="Ej: Enalapril" className={inputCls} />
-          </Field>
-          <Field label="Dosis">
-            <input value={form.dose} onChange={(e) => setField('dose', e.target.value)} placeholder="Ej: 10mg" className={inputCls} />
-          </Field>
+          <Field label="Nombre"><input value={form.name} onChange={(e) => setField('name', e.target.value)} placeholder="Ej: Enalapril" className={inputCls} /></Field>
+          <Field label="Dosis"><input value={form.dose} onChange={(e) => setField('dose', e.target.value)} placeholder="Ej: 10mg" className={inputCls} /></Field>
 
           <Field label="Horarios">
             <div className="flex flex-col gap-2">
               {form.times.map((t, i) => (
                 <div key={i} className="flex items-center gap-2">
                   <input type="time" value={t} onChange={(e) => setTime(i, e.target.value)} className={inputCls + ' flex-1'} />
-                  {form.times.length > 1 && (
-                    <button type="button" onClick={() => removeTime(i)} className="text-red-400 text-[20px] leading-none w-8 h-8 flex items-center justify-center">×</button>
-                  )}
+                  {form.times.length > 1 && <button type="button" onClick={() => removeTime(i)} className="text-red-400 text-[20px] leading-none w-8 h-8 flex items-center justify-center">×</button>}
                 </div>
               ))}
               <button type="button" onClick={addTime} className="text-[13px] text-[#1D9E75] font-medium text-left">+ Agregar horario</button>
             </div>
           </Field>
 
-          <Field label="Instrucciones (opcional)">
-            <input value={form.instructions} onChange={(e) => setField('instructions', e.target.value)} placeholder="Ej: Tomar con comida" className={inputCls} />
-          </Field>
+          <Field label="Instrucciones (opcional)"><input value={form.instructions} onChange={(e) => setField('instructions', e.target.value)} placeholder="Ej: Tomar con comida" className={inputCls} /></Field>
 
           <div className="flex gap-3">
-            <Field label="Stock inicial" className="flex-1">
-              <input type="number" min="0" value={form.stock} onChange={(e) => setField('stock', e.target.value)} className={inputCls} />
-            </Field>
-            <Field label="Stock mínimo" className="flex-1">
-              <input type="number" min="0" value={form.stock_min} onChange={(e) => setField('stock_min', e.target.value)} className={inputCls} />
-            </Field>
+            <Field label="Stock" className="flex-1"><input type="number" min="0" value={form.stock} onChange={(e) => setField('stock', e.target.value)} className={inputCls} /></Field>
+            <Field label="Stock mínimo" className="flex-1"><input type="number" min="0" value={form.stock_min} onChange={(e) => setField('stock_min', e.target.value)} className={inputCls} /></Field>
           </div>
 
           <Field label="Color">
             <div className="flex gap-2 flex-wrap">
               {PRESET_COLORS.map((c) => (
-                <button key={c} type="button" onClick={() => setField('color', c)}
-                  className="w-8 h-8 rounded-full transition-transform active:scale-95"
-                  style={{ backgroundColor: c, outline: form.color === c ? `3px solid ${c}` : 'none', outlineOffset: 2 }}
-                />
+                <button key={c} type="button" onClick={() => setField('color', c)} className="w-8 h-8 rounded-full transition-transform active:scale-95" style={{ backgroundColor: c, outline: form.color === c ? `3px solid ${c}` : 'none', outlineOffset: 2 }} />
               ))}
             </div>
           </Field>
 
           {error && <p className="text-[13px] text-red-500">{error}</p>}
 
-          <button type="submit" disabled={saving}
-            className="w-full py-3.5 rounded-xl bg-[#1D9E75] text-white text-[15px] font-semibold mt-1 transition-all active:scale-[0.98] disabled:opacity-50">
-            {saving ? 'Guardando…' : 'Guardar medicamento'}
+          <button type="submit" disabled={saving} className="w-full py-3.5 rounded-xl bg-[#1D9E75] text-white text-[15px] font-semibold mt-1 transition-all active:scale-[0.98] disabled:opacity-50">
+            {saving ? 'Guardando…' : isEdit ? 'Guardar cambios' : 'Guardar medicamento'}
           </button>
         </form>
+      </div>
+    </div>
+  )
+}
+
+// ─── Historial (calendar heatmap) ─────────────────────────────────────────────
+
+function HistorialView({ userId }: { userId: string }) {
+  const [countByDate, setCountByDate] = useState<Map<string, number>>(new Map())
+  const [loading, setLoading] = useState(true)
+  const cells = buildCalendarCells()
+
+  useEffect(() => {
+    async function fetchHistory() {
+      // from = oldest cell date
+      const from = cells.find((c) => c !== null)?.date ?? todayStr()
+      const { data } = await supabase
+        .from('doses')
+        .select('date')
+        .eq('user_id', userId)
+        .gte('date', from)
+
+      const map = new Map<string, number>()
+      for (const d of data ?? []) map.set(d.date, (map.get(d.date) ?? 0) + 1)
+      setCountByDate(map)
+      setLoading(false)
+    }
+    fetchHistory()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId])
+
+  // Streak: consecutive days ending today where count > 0
+  const streak = (() => {
+    let s = 0
+    const today = new Date()
+    for (let i = 0; i < 90; i++) {
+      const d = new Date(today)
+      d.setDate(today.getDate() - i)
+      if ((countByDate.get(d.toISOString().split('T')[0]) ?? 0) > 0) s++
+      else break
+    }
+    return s
+  })()
+
+  const totalMonth = (() => {
+    let t = 0
+    const today = new Date()
+    for (let i = 0; i < 30; i++) {
+      const d = new Date(today)
+      d.setDate(today.getDate() - i)
+      t += countByDate.get(d.toISOString().split('T')[0]) ?? 0
+    }
+    return t
+  })()
+
+  function cellColor(count: number): string {
+    if (count === 0) return 'bg-zinc-100 dark:bg-zinc-700/60'
+    if (count === 1) return 'bg-[#1D9E75]/25'
+    if (count <= 3) return 'bg-[#1D9E75]/55'
+    return 'bg-[#1D9E75]'
+  }
+
+  if (loading) return (
+    <div className="flex items-center justify-center py-16">
+      <div className="w-8 h-8 rounded-full border-[3px] border-[#1D9E75]/20 border-t-[#1D9E75] spinner" />
+    </div>
+  )
+
+  // Split cells into rows of 7
+  const rows: typeof cells[] = []
+  for (let i = 0; i < cells.length; i += 7) rows.push(cells.slice(i, i + 7))
+
+  // Find which month(s) are covered to show labels
+  const monthLabel = (() => {
+    const dates = cells.filter(Boolean).map((c) => c!.date)
+    if (!dates.length) return ''
+    const first = new Date(dates[0])
+    const last = new Date(dates[dates.length - 1])
+    const fmt = (d: Date) => d.toLocaleDateString('es-AR', { month: 'long' })
+    return first.getMonth() === last.getMonth() ? fmt(last) : `${fmt(first)} – ${fmt(last)}`
+  })()
+
+  return (
+    <div className="px-4 pb-28 pt-2">
+      {/* Stats */}
+      <div className="flex gap-3 mb-5">
+        <div className="flex-1 bg-white dark:bg-zinc-800 rounded-2xl p-4 shadow-sm text-center">
+          <p className="text-[26px] font-bold text-[#1D9E75]">{streak}</p>
+          <p className="text-[11px] font-medium text-zinc-400 uppercase tracking-wide mt-0.5">día{streak !== 1 ? 's' : ''} racha</p>
+        </div>
+        <div className="flex-1 bg-white dark:bg-zinc-800 rounded-2xl p-4 shadow-sm text-center">
+          <p className="text-[26px] font-bold text-zinc-800 dark:text-zinc-100">{totalMonth}</p>
+          <p className="text-[11px] font-medium text-zinc-400 uppercase tracking-wide mt-0.5">dosis este mes</p>
+        </div>
+      </div>
+
+      {/* Calendar */}
+      <div className="bg-white dark:bg-zinc-800 rounded-2xl p-4 shadow-sm">
+        <p className="text-[12px] font-semibold text-zinc-500 dark:text-zinc-400 capitalize mb-3">{monthLabel}</p>
+
+        {/* Weekday headers */}
+        <div className="grid grid-cols-7 gap-1 mb-1">
+          {WEEKDAY_LABELS.map((d) => (
+            <div key={d} className="text-center text-[10px] font-semibold text-zinc-400">{d}</div>
+          ))}
+        </div>
+
+        {/* Calendar rows */}
+        {rows.map((row, ri) => (
+          <div key={ri} className="grid grid-cols-7 gap-1 mb-1">
+            {row.map((cell, ci) => {
+              if (!cell) return <div key={ci} className="aspect-square rounded-md" />
+              const count = countByDate.get(cell.date) ?? 0
+              return (
+                <div key={ci}
+                  className={['aspect-square rounded-md transition-all', cellColor(count), cell.isToday ? 'ring-2 ring-[#1D9E75] ring-offset-1' : ''].join(' ')}
+                  title={`${cell.date}: ${count} dosis`}
+                />
+              )
+            })}
+          </div>
+        ))}
+
+        {/* Legend */}
+        <div className="flex items-center gap-2 mt-3 justify-end">
+          <span className="text-[10px] text-zinc-400">Menos</span>
+          {['bg-zinc-100 dark:bg-zinc-700/60', 'bg-[#1D9E75]/25', 'bg-[#1D9E75]/55', 'bg-[#1D9E75]'].map((c, i) => (
+            <div key={i} className={`w-3 h-3 rounded-sm ${c}`} />
+          ))}
+          <span className="text-[10px] text-zinc-400">Más</span>
+        </div>
       </div>
     </div>
   )
@@ -488,6 +607,7 @@ function HoyView({ medications, doses, onToggle }: { medications: Medication[]; 
   const taken = doses.filter((d) => d.taken)
   const pending = doses.filter((d) => !d.taken)
   const lowStock = medications.filter((m) => m.stock < m.stock_min)
+
   return (
     <div className="flex-1 overflow-y-auto pb-28 px-4 pt-8">
       <PageHeader title={header.greeting || '\u00A0'} subtitle={header.date || '\u00A0'} />
@@ -511,25 +631,13 @@ function HoyView({ medications, doses, onToggle }: { medications: Medication[]; 
           <span className="text-[18px] leading-none mt-0.5" aria-hidden>⚠️</span>
           <div className="flex-1 min-w-0">
             <p className="text-[13px] font-semibold text-amber-800 dark:text-amber-400 mb-0.5">Stock bajo</p>
-            {lowStock.map((m) => (
-              <p key={m.id} className="text-[12px] text-amber-700 dark:text-amber-500 leading-snug">{m.name} {m.dose} — <strong>{m.stock}</strong> unidades restantes</p>
-            ))}
+            {lowStock.map((m) => <p key={m.id} className="text-[12px] text-amber-700 dark:text-amber-500 leading-snug">{m.name} {m.dose} — <strong>{m.stock}</strong> unidades restantes</p>)}
           </div>
         </section>
       )}
 
-      {pending.length > 0 && (
-        <section className="mb-3">
-          <SectionLabel>Pendientes</SectionLabel>
-          <div className="flex flex-col gap-2">{pending.map((d) => <DoseCard key={d.id} dose={d} onToggle={onToggle} />)}</div>
-        </section>
-      )}
-      {taken.length > 0 && (
-        <section className="mb-3">
-          <SectionLabel>Tomadas</SectionLabel>
-          <div className="flex flex-col gap-2">{taken.map((d) => <DoseCard key={d.id} dose={d} onToggle={onToggle} />)}</div>
-        </section>
-      )}
+      {pending.length > 0 && <section className="mb-3"><SectionLabel>Pendientes</SectionLabel><div className="flex flex-col gap-2">{pending.map((d) => <DoseCard key={d.id} dose={d} onToggle={onToggle} />)}</div></section>}
+      {taken.length > 0 && <section className="mb-3"><SectionLabel>Tomadas</SectionLabel><div className="flex flex-col gap-2">{taken.map((d) => <DoseCard key={d.id} dose={d} onToggle={onToggle} />)}</div></section>}
     </div>
   )
 }
@@ -542,43 +650,63 @@ function MedicacionView({ medications, userId, onRefresh, onSignOut }: {
   onRefresh: () => void
   onSignOut: () => void
 }) {
-  const [showForm, setShowForm] = useState(false)
+  const [view, setView] = useState<'list' | 'historial'>('list')
+  const [sheetMed, setSheetMed] = useState<Medication | Partial<Medication> | null>(null) // null = closed, {} = new, med = edit
+
+  async function handleDelete(id: string) {
+    await supabase.from('medications').update({ active: false }).eq('id', id).eq('user_id', userId)
+    onRefresh()
+  }
+
   return (
-    <div className="flex-1 overflow-y-auto pb-28 px-4 pt-8">
-      {/* Header row with sign-out */}
-      <div className="flex items-start justify-between mb-6">
-        <header>
-          <p className="text-[13px] text-zinc-400 dark:text-zinc-500 mb-0.5">{`${medications.length} medicamento${medications.length !== 1 ? 's' : ''} activo${medications.length !== 1 ? 's' : ''}`}</p>
-          <h1 className="text-[26px] font-bold tracking-tight text-zinc-800 dark:text-zinc-100">Mi medicación</h1>
-        </header>
-        <button
-          onClick={onSignOut}
-          className="mt-1 flex items-center gap-1.5 text-[12px] font-medium text-zinc-400 dark:text-zinc-500 hover:text-red-500 dark:hover:text-red-400 transition-colors"
-          aria-label="Cerrar sesión"
-        >
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-            <polyline points="16 17 21 12 16 7" />
-            <line x1="21" y1="12" x2="9" y2="12" />
-          </svg>
-          Salir
-        </button>
+    <div className="flex-1 flex flex-col overflow-hidden">
+      {/* Header */}
+      <div className="px-4 pt-8 pb-4 shrink-0">
+        <div className="flex items-start justify-between mb-4">
+          <header>
+            <p className="text-[13px] text-zinc-400 dark:text-zinc-500 mb-0.5">{`${medications.length} activo${medications.length !== 1 ? 's' : ''}`}</p>
+            <h1 className="text-[26px] font-bold tracking-tight text-zinc-800 dark:text-zinc-100">Mi medicación</h1>
+          </header>
+          <button onClick={onSignOut} className="mt-1 flex items-center gap-1.5 text-[12px] font-medium text-zinc-400 dark:text-zinc-500 hover:text-red-500 dark:hover:text-red-400 transition-colors" aria-label="Cerrar sesión">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></svg>
+            Salir
+          </button>
+        </div>
+
+        {/* Toggle */}
+        <div className="flex bg-zinc-100 dark:bg-zinc-800 rounded-xl p-1 gap-1">
+          {(['list', 'historial'] as const).map((v) => (
+            <button key={v} onClick={() => setView(v)} className={['flex-1 py-2 rounded-lg text-[13px] font-semibold transition-all', view === v ? 'bg-white dark:bg-zinc-700 text-zinc-800 dark:text-zinc-100 shadow-sm' : 'text-zinc-500 dark:text-zinc-400'].join(' ')}>
+              {v === 'list' ? 'Medicamentos' : 'Historial'}
+            </button>
+          ))}
+        </div>
       </div>
 
-      <div className="flex flex-col gap-3 mb-4">
-        {medications.map((med) => <MedicationCard key={med.id} med={med} />)}
-      </div>
-      <button
-        onClick={() => setShowForm(true)}
-        className="w-full py-4 rounded-2xl border-2 border-dashed border-zinc-300 dark:border-zinc-700 text-zinc-400 dark:text-zinc-500 text-[14px] font-medium flex items-center justify-center gap-2 transition-colors hover:border-[#1D9E75] hover:text-[#1D9E75] active:scale-[0.98]">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-        Agregar medicamento
-      </button>
-      {showForm && (
-        <AddMedSheet
+      {view === 'list' ? (
+        <div className="flex-1 overflow-y-auto px-4 pb-28">
+          <div className="flex flex-col gap-3 mb-4">
+            {medications.map((med) => (
+              <MedicationCard key={med.id} med={med} onEdit={(m) => setSheetMed(m)} onDelete={handleDelete} />
+            ))}
+          </div>
+          <button onClick={() => setSheetMed({})} className="w-full py-4 rounded-2xl border-2 border-dashed border-zinc-300 dark:border-zinc-700 text-zinc-400 dark:text-zinc-500 text-[14px] font-medium flex items-center justify-center gap-2 transition-colors hover:border-[#1D9E75] hover:text-[#1D9E75] active:scale-[0.98]">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+            Agregar medicamento
+          </button>
+        </div>
+      ) : (
+        <div className="flex-1 overflow-y-auto">
+          <HistorialView userId={userId} />
+        </div>
+      )}
+
+      {sheetMed !== null && (
+        <MedSheet
           userId={userId}
-          onClose={() => setShowForm(false)}
-          onSaved={() => { setShowForm(false); onRefresh() }}
+          editMed={sheetMed}
+          onClose={() => setSheetMed(null)}
+          onSaved={() => { setSheetMed(null); onRefresh() }}
         />
       )}
     </div>
@@ -587,90 +715,137 @@ function MedicacionView({ medications, userId, onRefresh, onSignOut }: {
 
 // ─── ESCANEAR view ────────────────────────────────────────────────────────────
 
-function ScanView() {
+function ScanView({ userId, onMedAdded }: { userId: string; onMedAdded: () => void }) {
   const [state, setState] = useState<ScanState>('idle')
+  const [preview, setPreview] = useState<string | null>(null)
+  const [result, setResult] = useState<ScanResult | null>(null)
+  const [showAddForm, setShowAddForm] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
-  function handleScan() {
+  async function handleFile(file: File) {
+    if (!file.type.startsWith('image/')) return
     setState('loading')
-    setTimeout(() => setState('result'), 2000)
+    setResult(null)
+    setPreview(URL.createObjectURL(file))
+
+    try {
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = (e) => {
+          const dataUrl = e.target?.result as string
+          resolve(dataUrl.split(',')[1])
+        }
+        reader.onerror = reject
+        reader.readAsDataURL(file)
+      })
+
+      const res = await fetch('/api/scan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageBase64: base64, mediaType: file.type }),
+      })
+
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const data: ScanResult = await res.json()
+
+      if (data.error) { setState('error'); setResult(data); return }
+      setResult(data)
+      setState('result')
+    } catch {
+      setState('error')
+      setResult({ error: 'No se pudo analizar la imagen. Intentá de nuevo.' })
+    }
   }
+
+  function reset() {
+    setState('idle')
+    setPreview(null)
+    setResult(null)
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
+  // Pre-fill data from scan result for MedSheet
+  const scanInitial: Partial<Medication> | undefined = result && !result.error ? {
+    name: result.name ?? '',
+    dose: result.dose ?? '',
+    instructions: [result.activeIngredient, result.laboratory].filter(Boolean).join(' — ') || result.instructions || '',
+  } : undefined
 
   return (
     <div className="flex-1 overflow-y-auto pb-28 px-4 pt-8">
-      <PageHeader
-        title="Escanear medicamento"
-        subtitle="Sacá una foto de la caja y la IA completa los datos"
-      />
+      <PageHeader title="Escanear medicamento" subtitle="Sacá una foto de la caja y la IA completa los datos" />
+
+      {/* Hidden file input — capture=environment opens camera on mobile */}
+      <input ref={fileInputRef} type="file" accept="image/*" capture="environment" className="hidden"
+        onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f) }} />
 
       {state === 'idle' && (
-        <button
-          onClick={handleScan}
-          className="w-full aspect-[4/3] rounded-2xl border-2 border-dashed border-zinc-300 dark:border-zinc-700
-            flex flex-col items-center justify-center gap-4
-            bg-white dark:bg-zinc-800/60
-            transition-all hover:border-[#1D9E75] hover:bg-[#1D9E75]/5
-            active:scale-[0.99] active:bg-[#1D9E75]/8 shadow-sm">
-          <div className="w-20 h-20 rounded-2xl bg-zinc-100 dark:bg-zinc-700 flex items-center justify-center">
-            <IconCamera />
-          </div>
+        <button onClick={() => fileInputRef.current?.click()}
+          className="w-full aspect-[4/3] rounded-2xl border-2 border-dashed border-zinc-300 dark:border-zinc-700 flex flex-col items-center justify-center gap-4 bg-white dark:bg-zinc-800/60 transition-all hover:border-[#1D9E75] hover:bg-[#1D9E75]/5 active:scale-[0.99] shadow-sm">
+          <div className="w-20 h-20 rounded-2xl bg-zinc-100 dark:bg-zinc-700 flex items-center justify-center"><IconCamera /></div>
           <div className="text-center">
             <p className="text-[15px] font-semibold text-zinc-600 dark:text-zinc-300">Tocar para sacar foto</p>
-            <p className="text-[12px] text-zinc-400 mt-0.5">JPG, PNG o foto de cámara</p>
+            <p className="text-[12px] text-zinc-400 mt-0.5">Se abre la cámara del celular</p>
           </div>
         </button>
       )}
 
-      {state === 'loading' && (
-        <div className="w-full aspect-[4/3] rounded-2xl border-2 border-[#1D9E75]/25
-          bg-[#1D9E75]/5 dark:bg-[#1D9E75]/8
-          flex flex-col items-center justify-center gap-5 shadow-sm">
-          <div className="w-12 h-12 rounded-full border-[3px] border-[#1D9E75]/20 border-t-[#1D9E75] spinner" />
-          <div className="text-center">
-            <p className="text-[15px] font-semibold text-zinc-700 dark:text-zinc-200">Analizando imagen con IA...</p>
-            <p className="text-[12px] text-zinc-400 mt-0.5">Esto tarda solo un momento</p>
-          </div>
+      {(state === 'loading' || preview) && state !== 'result' && state !== 'error' && (
+        <div className="w-full aspect-[4/3] rounded-2xl overflow-hidden relative shadow-sm bg-zinc-100 dark:bg-zinc-800">
+          {preview && <img src={preview} alt="Preview" className="w-full h-full object-cover" />}
+          {state === 'loading' && (
+            <div className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center gap-3">
+              <div className="w-10 h-10 rounded-full border-[3px] border-white/20 border-t-white spinner" />
+              <p className="text-white text-[14px] font-medium">Analizando con IA…</p>
+            </div>
+          )}
         </div>
       )}
 
-      {state === 'result' && (
+      {state === 'error' && (
         <div className="flex flex-col gap-3">
+          {preview && <div className="w-full aspect-[4/3] rounded-2xl overflow-hidden shadow-sm"><img src={preview} alt="Preview" className="w-full h-full object-cover opacity-50" /></div>}
+          <div className="bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800/50 rounded-2xl p-4 flex gap-3">
+            <span className="text-[18px]">❌</span>
+            <div><p className="text-[13px] font-semibold text-red-700 dark:text-red-400 mb-0.5">No se pudo identificar</p><p className="text-[12px] text-red-600 dark:text-red-500">{result?.error}</p></div>
+          </div>
+          <button onClick={reset} className="w-full py-3.5 rounded-xl border-2 border-zinc-200 dark:border-zinc-700 text-[14px] font-semibold text-zinc-600 dark:text-zinc-300 active:scale-[0.98]">Intentar de nuevo</button>
+        </div>
+      )}
+
+      {state === 'result' && result && (
+        <div className="flex flex-col gap-3">
+          {preview && <div className="w-full aspect-[4/3] rounded-2xl overflow-hidden shadow-sm"><img src={preview} alt="Preview" className="w-full h-full object-cover" /></div>}
+
           <div className="bg-[#1D9E75]/10 border border-[#1D9E75]/25 rounded-2xl p-4 flex items-center gap-3">
-            <div className="w-8 h-8 rounded-full bg-[#1D9E75] flex items-center justify-center shrink-0">
-              <IconCheck />
-            </div>
-            <div>
-              <p className="text-[14px] font-semibold text-[#1D9E75]">Medicamento identificado</p>
-              <p className="text-[12px] text-[#1D9E75]/70">Revisá los datos antes de confirmar</p>
-            </div>
+            <div className="w-8 h-8 rounded-full bg-[#1D9E75] flex items-center justify-center shrink-0"><IconCheck /></div>
+            <div><p className="text-[14px] font-semibold text-[#1D9E75]">Medicamento identificado</p><p className="text-[12px] text-[#1D9E75]/70">Revisá los datos antes de agregar</p></div>
           </div>
 
           <div className="bg-white dark:bg-zinc-800 rounded-2xl px-4 shadow-sm divide-y divide-zinc-100 dark:divide-zinc-700">
             {[
-              { label: 'Nombre comercial', value: SCAN_RESULT.comercial },
-              { label: 'Principio activo', value: SCAN_RESULT.activo },
-              { label: 'Dosis',            value: SCAN_RESULT.dosis },
-              { label: 'Laboratorio',      value: SCAN_RESULT.laboratorio },
-            ].map(({ label, value }) => (
-              <div key={label} className="flex items-center justify-between py-3.5">
-                <span className="text-[13px] text-zinc-400">{label}</span>
-                <span className="text-[14px] font-semibold text-zinc-800 dark:text-zinc-100">{value}</span>
+              { label: 'Nombre comercial', value: result.name },
+              { label: 'Principio activo', value: result.activeIngredient },
+              { label: 'Dosis', value: result.dose },
+              { label: 'Laboratorio', value: result.laboratory },
+              { label: 'Instrucciones', value: result.instructions },
+            ].filter(({ value }) => value).map(({ label, value }) => (
+              <div key={label} className="flex items-start justify-between py-3.5 gap-4">
+                <span className="text-[13px] text-zinc-400 shrink-0">{label}</span>
+                <span className="text-[13px] font-semibold text-zinc-800 dark:text-zinc-100 text-right">{value}</span>
               </div>
             ))}
           </div>
 
           <div className="flex gap-2.5 mt-1">
-            <button
-              onClick={() => setState('idle')}
-              className="flex-1 py-3.5 rounded-xl border-2 border-zinc-200 dark:border-zinc-700
-                text-[14px] font-semibold text-zinc-600 dark:text-zinc-300
-                transition-colors hover:border-zinc-300 active:scale-[0.98]">
-              Reintentar
-            </button>
-            <button className="flex-1 py-3.5 rounded-xl bg-[#1D9E75] text-white text-[14px] font-semibold transition-all active:scale-[0.98] active:brightness-90 shadow-sm">
-              Confirmar y agregar
-            </button>
+            <button onClick={reset} className="flex-1 py-3.5 rounded-xl border-2 border-zinc-200 dark:border-zinc-700 text-[14px] font-semibold text-zinc-600 dark:text-zinc-300 active:scale-[0.98]">Reintentar</button>
+            <button onClick={() => setShowAddForm(true)} className="flex-1 py-3.5 rounded-xl bg-[#1D9E75] text-white text-[14px] font-semibold active:scale-[0.98] shadow-sm">Agregar a mis meds</button>
           </div>
         </div>
+      )}
+
+      {showAddForm && scanInitial && (
+        <MedSheet userId={userId} editMed={scanInitial} onClose={() => setShowAddForm(false)} onSaved={() => { setShowAddForm(false); reset(); onMedAdded() }} />
       )}
     </div>
   )
@@ -681,9 +856,7 @@ function ScanView() {
 function TypingIndicator() {
   return (
     <div className="flex items-end gap-2 mb-2">
-      <div className="w-7 h-7 rounded-full bg-[#1D9E75]/15 flex items-center justify-center shrink-0">
-        <span className="text-[14px]">🤖</span>
-      </div>
+      <div className="w-7 h-7 rounded-full bg-[#1D9E75]/15 flex items-center justify-center shrink-0"><span className="text-[14px]">🤖</span></div>
       <div className="bg-white dark:bg-zinc-800 rounded-2xl rounded-bl-sm px-4 py-3 shadow-sm">
         <span className="typing-dot text-zinc-400 text-xl leading-none">•</span>
         <span className="typing-dot text-zinc-400 text-xl leading-none mx-0.5">•</span>
@@ -697,27 +870,12 @@ function ChatBubble({ msg }: { msg: ChatMessage }) {
   const isUser = msg.role === 'user'
   return (
     <div className={['flex items-end gap-2 mb-2', isUser ? 'flex-row-reverse' : ''].join(' ')}>
-      {!isUser && (
-        <div className="w-7 h-7 rounded-full bg-[#1D9E75]/15 flex items-center justify-center shrink-0">
-          <span className="text-[14px]">🤖</span>
-        </div>
-      )}
-      <div className={[
-        'max-w-[78%] px-4 py-2.5 rounded-2xl shadow-sm text-[14px] leading-relaxed',
-        isUser
-          ? 'bg-[#1D9E75] text-white rounded-br-sm'
-          : 'bg-white dark:bg-zinc-800 text-zinc-800 dark:text-zinc-100 rounded-bl-sm',
-      ].join(' ')}>
+      {!isUser && <div className="w-7 h-7 rounded-full bg-[#1D9E75]/15 flex items-center justify-center shrink-0"><span className="text-[14px]">🤖</span></div>}
+      <div className={['max-w-[78%] px-4 py-2.5 rounded-2xl shadow-sm text-[14px] leading-relaxed', isUser ? 'bg-[#1D9E75] text-white rounded-br-sm' : 'bg-white dark:bg-zinc-800 text-zinc-800 dark:text-zinc-100 rounded-bl-sm'].join(' ')}>
         {msg.text}
       </div>
     </div>
   )
-}
-
-// API message format for conversation history
-interface ApiMessage {
-  role: 'user' | 'assistant'
-  content: string
 }
 
 function AsistenteView({ medications }: { medications: Medication[] }) {
@@ -730,24 +888,18 @@ function AsistenteView({ medications }: { medications: Medication[] }) {
   const bottomRef = useRef<HTMLDivElement>(null)
   const abortRef = useRef<AbortController | null>(null)
 
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [displayMessages, isStreaming, streamingText])
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [displayMessages, isStreaming, streamingText])
 
   async function sendMessage(text: string) {
     const trimmed = text.trim()
     if (!trimmed || isStreaming) return
 
-    setInput('')
-    setQuickUsed(true)
-
+    setInput(''); setQuickUsed(true)
     const userMsg: ChatMessage = { id: Date.now().toString(), role: 'user', text: trimmed }
     setDisplayMessages((prev) => [...prev, userMsg])
-
     const newHistory: ApiMessage[] = [...apiHistory, { role: 'user', content: trimmed }]
     setApiHistory(newHistory)
-    setIsStreaming(true)
-    setStreamingText('')
+    setIsStreaming(true); setStreamingText('')
 
     const abort = new AbortController()
     abortRef.current = abort
@@ -759,109 +911,56 @@ function AsistenteView({ medications }: { medications: Medication[] }) {
         body: JSON.stringify({ messages: newHistory, medications }),
         signal: abort.signal,
       })
-
       if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`)
 
       const reader = res.body.getReader()
       const decoder = new TextDecoder()
       let fullText = ''
-
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
-        const chunk = decoder.decode(value, { stream: true })
-        fullText += chunk
+        fullText += decoder.decode(value, { stream: true })
         setStreamingText(fullText)
       }
 
-      // Commit streaming message to history
-      const assistantMsg: ChatMessage = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        text: fullText || 'No pude generar una respuesta. Intentá de nuevo.',
-      }
-      setDisplayMessages((prev) => [...prev, assistantMsg])
+      setDisplayMessages((prev) => [...prev, { id: (Date.now() + 1).toString(), role: 'assistant', text: fullText || 'No pude generar una respuesta. Intentá de nuevo.' }])
       setApiHistory((prev) => [...prev, { role: 'assistant', content: fullText }])
     } catch (err: unknown) {
       if (err instanceof Error && err.name === 'AbortError') return
-      const errMsg: ChatMessage = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        text: 'No pude conectarme. Revisá tu conexión e intentá de nuevo.',
-      }
-      setDisplayMessages((prev) => [...prev, errMsg])
+      setDisplayMessages((prev) => [...prev, { id: (Date.now() + 1).toString(), role: 'assistant', text: 'No pude conectarme. Revisá tu conexión e intentá de nuevo.' }])
     } finally {
-      setIsStreaming(false)
-      setStreamingText('')
-      abortRef.current = null
+      setIsStreaming(false); setStreamingText(''); abortRef.current = null
     }
   }
-
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    sendMessage(input)
-  }
-
-  // Build display list: committed messages + live streaming bubble
-  const allMessages = displayMessages
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       <div className="px-4 pt-8 pb-4 shrink-0">
         <PageHeader title="Asistente" subtitle="Con contexto de tu medicación actual" />
       </div>
-
       <div className="flex-1 overflow-y-auto px-4 pb-4">
-        {allMessages.map((msg, i) => (
+        {displayMessages.map((msg, i) => (
           <div key={msg.id}>
             <ChatBubble msg={msg} />
             {i === 0 && !quickUsed && (
               <div className="flex flex-wrap gap-2 mb-4 pl-9">
                 {QUICK_QUESTIONS.map((q) => (
-                  <button
-                    key={q}
-                    onClick={() => sendMessage(q)}
-                    className="text-[12px] font-medium px-3 py-1.5 rounded-full
-                      border border-zinc-200 dark:border-zinc-700
-                      text-zinc-600 dark:text-zinc-300
-                      bg-white dark:bg-zinc-800 shadow-sm
-                      transition-colors hover:border-[#1D9E75] hover:text-[#1D9E75]
-                      active:scale-[0.97]">
-                    {q}
-                  </button>
+                  <button key={q} onClick={() => sendMessage(q)} className="text-[12px] font-medium px-3 py-1.5 rounded-full border border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 bg-white dark:bg-zinc-800 shadow-sm transition-colors hover:border-[#1D9E75] hover:text-[#1D9E75] active:scale-[0.97]">{q}</button>
                 ))}
               </div>
             )}
           </div>
         ))}
-
-        {/* Live streaming bubble */}
         {isStreaming && streamingText === '' && <TypingIndicator />}
-        {isStreaming && streamingText !== '' && (
-          <ChatBubble
-            msg={{ id: 'streaming', role: 'assistant', text: streamingText }}
-          />
-        )}
-
+        {isStreaming && streamingText !== '' && <ChatBubble msg={{ id: 'streaming', role: 'assistant', text: streamingText }} />}
         <div ref={bottomRef} />
       </div>
-
       <div className="shrink-0 px-4 pb-[76px] pt-2 bg-[#F6F5F0]/90 dark:bg-zinc-950/90 backdrop-blur-sm border-t border-zinc-200/60 dark:border-zinc-800/60">
-        <form onSubmit={handleSubmit} className="flex items-center gap-2">
-          <input
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="Escribí tu consulta..."
-            className="flex-1 h-11 px-4 rounded-xl bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700
-              text-[14px] text-zinc-800 dark:text-zinc-100 placeholder-zinc-400
-              outline-none focus:border-[#1D9E75] transition-colors shadow-sm"
-          />
-          <button
-            type="submit"
-            disabled={!input.trim() || isStreaming}
-            className="w-11 h-11 rounded-xl bg-[#1D9E75] text-white flex items-center justify-center
-              transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed shadow-sm">
+        <form onSubmit={(e) => { e.preventDefault(); sendMessage(input) }} className="flex items-center gap-2">
+          <input type="text" value={input} onChange={(e) => setInput(e.target.value)} placeholder="Escribí tu consulta..."
+            className="flex-1 h-11 px-4 rounded-xl bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-[14px] text-zinc-800 dark:text-zinc-100 placeholder-zinc-400 outline-none focus:border-[#1D9E75] transition-colors shadow-sm" />
+          <button type="submit" disabled={!input.trim() || isStreaming}
+            className="w-11 h-11 rounded-xl bg-[#1D9E75] text-white flex items-center justify-center transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed shadow-sm">
             <IconSend />
           </button>
         </form>
@@ -874,10 +973,7 @@ function AsistenteView({ medications }: { medications: Medication[] }) {
 
 function TabBar({ active, onChange }: { active: string; onChange: (id: string) => void }) {
   return (
-    <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[390px]
-      bg-white/90 dark:bg-zinc-900/90 backdrop-blur-md
-      border-t border-zinc-200 dark:border-zinc-800
-      flex justify-around items-center h-[60px] px-1 z-50">
+    <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[390px] bg-white/90 dark:bg-zinc-900/90 backdrop-blur-md border-t border-zinc-200 dark:border-zinc-800 flex justify-around items-center h-[60px] px-1 z-50">
       {TABS.map(({ id, label, Icon }) => {
         const isActive = active === id
         return (
@@ -907,12 +1003,10 @@ export default function HomePage() {
       setUser(session?.user ?? null)
       setAuthState(session ? 'authenticated' : 'unauthenticated')
     })
-
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null)
       setAuthState(session ? 'authenticated' : 'unauthenticated')
     })
-
     return () => subscription.unsubscribe()
   }, [])
 
@@ -939,36 +1033,44 @@ export default function HomePage() {
     if (!user) return
     const dose = doses.find((d) => d.id === doseId)
     if (!dose) return
+    const med = medications.find((m) => m.id === dose.medicationId)
 
-    setDoses((prev) => prev.map((d) => d.id === doseId ? { ...d, taken: !d.taken } : d))
+    const wasTaken = dose.taken
 
-    if (!dose.taken) {
-      await supabase.from('doses').upsert({
-        medication_id: dose.medicationId,
-        scheduled_time: dose.time,
-        date: todayStr(),
-        taken_at: new Date().toISOString(),
-        user_id: user.id,
-      }, { onConflict: 'medication_id,scheduled_time,date' })
+    // Optimistic UI
+    setDoses((prev) => prev.map((d) => d.id === doseId ? { ...d, taken: !wasTaken } : d))
+
+    if (!wasTaken) {
+      // Mark as taken + decrement stock
+      const newStock = med ? Math.max(0, med.stock - 1) : 0
+      await Promise.all([
+        supabase.from('doses').upsert({
+          medication_id: dose.medicationId,
+          scheduled_time: dose.time,
+          date: todayStr(),
+          taken_at: new Date().toISOString(),
+          user_id: user.id,
+        }, { onConflict: 'medication_id,scheduled_time,date' }),
+        med && supabase.from('medications').update({ stock: newStock }).eq('id', med.id).eq('user_id', user.id),
+      ])
+      if (med) setMedications((prev) => prev.map((m) => m.id === med.id ? { ...m, stock: newStock } : m))
     } else {
-      await supabase.from('doses')
-        .delete()
-        .eq('medication_id', dose.medicationId)
-        .eq('scheduled_time', dose.time)
-        .eq('date', todayStr())
-        .eq('user_id', user.id)
+      // Un-mark + restore stock
+      const newStock = med ? med.stock + 1 : 0
+      await Promise.all([
+        supabase.from('doses').delete().eq('medication_id', dose.medicationId).eq('scheduled_time', dose.time).eq('date', todayStr()).eq('user_id', user.id),
+        med && supabase.from('medications').update({ stock: newStock }).eq('id', med.id).eq('user_id', user.id),
+      ])
+      if (med) setMedications((prev) => prev.map((m) => m.id === med.id ? { ...m, stock: newStock } : m))
     }
   }
 
   async function handleSignOut() {
     await supabase.auth.signOut()
-    setMedications([])
-    setDoses([])
-    setActiveTab('hoy')
+    setMedications([]); setDoses([]); setActiveTab('hoy')
   }
 
-  // Auth loading
-  if (authState === 'loading') {
+  if (authState === 'loading' || (dataLoading && medications.length === 0)) {
     return (
       <div className="min-h-dvh bg-[#F6F5F0] dark:bg-zinc-950 flex items-center justify-center">
         <div className="w-10 h-10 rounded-full border-[3px] border-[#1D9E75]/20 border-t-[#1D9E75] spinner" />
@@ -976,18 +1078,7 @@ export default function HomePage() {
     )
   }
 
-  if (authState === 'unauthenticated') {
-    return <LoginView />
-  }
-
-  // Data loading (first load after login)
-  if (dataLoading && medications.length === 0) {
-    return (
-      <div className="min-h-dvh bg-[#F6F5F0] dark:bg-zinc-950 flex items-center justify-center">
-        <div className="w-10 h-10 rounded-full border-[3px] border-[#1D9E75]/20 border-t-[#1D9E75] spinner" />
-      </div>
-    )
-  }
+  if (authState === 'unauthenticated') return <LoginView />
 
   return (
     <div className="min-h-dvh bg-[#F6F5F0] dark:bg-zinc-950 flex justify-center">
@@ -995,7 +1086,7 @@ export default function HomePage() {
         <main className="flex-1 flex flex-col overflow-hidden">
           {activeTab === 'hoy'        && <HoyView medications={medications} doses={doses} onToggle={toggle} />}
           {activeTab === 'medicacion' && <MedicacionView medications={medications} userId={user!.id} onRefresh={() => loadData(user!.id)} onSignOut={handleSignOut} />}
-          {activeTab === 'escanear'   && <ScanView />}
+          {activeTab === 'escanear'   && <ScanView userId={user!.id} onMedAdded={() => loadData(user!.id)} />}
           {activeTab === 'asistente'  && <AsistenteView medications={medications} />}
         </main>
         <TabBar active={activeTab} onChange={setActiveTab} />
