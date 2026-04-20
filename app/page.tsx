@@ -190,7 +190,7 @@ function LoginView() {
       else setSuccessMsg('Revisá tu email para confirmar la cuenta.')
     } else {
       const { error: err } = await supabase.auth.signInWithPassword({ email: email.trim(), password })
-      if (err) setError('Email o contraseña incorrectos.')
+      if (err) setError(err.message)
     }
     setLoading(false)
   }
