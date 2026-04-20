@@ -6,6 +6,9 @@ export const metadata: Metadata = {
   description: 'Gestión de medicación personal',
   manifest: '/manifest.json',
   appleWebApp: { capable: true, statusBarStyle: 'default', title: 'MedApp' },
+  icons: {
+    apple: '/icons/icon-192.png',
+  },
 }
 
 export const viewport: Viewport = {
