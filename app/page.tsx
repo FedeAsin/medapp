@@ -28,6 +28,7 @@ interface DoseItem {
   instructions?: string
   color: string
   taken: boolean
+  status: 'pending' | 'taken' | 'late'
 }
 
 interface ScanResult {
@@ -53,13 +54,21 @@ const WEEKDAY_LABELS = ['L', 'M', 'X', 'J', 'V', 'S', 'D']
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function todayStr(): string {
-  return new Date().toISOString().split('T')[0]
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+function isLate(time: string): boolean {
+  const [h, m] = time.split(':').map(Number)
+  const now = new Date()
+  return now.getHours() * 60 + now.getMinutes() > h * 60 + m
 }
 
 function buildDoses(medications: Medication[], takenSet: Set<string>): DoseItem[] {
   const items: DoseItem[] = []
   for (const med of medications)
-    for (const time of med.times)
+    for (const time of med.times) {
+      const taken = takenSet.has(`${med.id}-${time}`)
       items.push({
         id: `${med.id}-${time}`,
         medicationId: med.id,
@@ -68,14 +77,56 @@ function buildDoses(medications: Medication[], takenSet: Set<string>): DoseItem[
         time,
         instructions: med.instructions,
         color: med.color,
-        taken: takenSet.has(`${med.id}-${time}`),
+        taken,
+        status: taken ? 'taken' : isLate(time) ? 'late' : 'pending',
       })
+    }
   return items.sort((a, b) => a.time.localeCompare(b.time))
 }
 
 function frequencyLabel(times: string[]): string {
   const n = times.length
   return n === 1 ? '1 vez al día' : `${n} veces al día`
+}
+
+// ─── Franja horaria ───────────────────────────────────────────────────────────
+
+const FRANJAS = [
+  { key: 'mañana', label: 'Mañana',  emoji: '🌅', from: 0,  to: 12 },
+  { key: 'tarde',  label: 'Tarde',   emoji: '☀️', from: 12, to: 18 },
+  { key: 'noche',  label: 'Noche',   emoji: '🌙', from: 18, to: 24 },
+] as const
+
+function getFranja(time: string): string {
+  const h = parseInt(time.split(':')[0])
+  if (h < 12) return 'mañana'
+  if (h < 18) return 'tarde'
+  return 'noche'
+}
+
+// ─── Notifications ────────────────────────────────────────────────────────────
+
+function scheduleNotifications(doses: DoseItem[]) {
+  const now = new Date()
+  for (const dose of doses) {
+    if (dose.taken) continue
+    const [h, m] = dose.time.split(':').map(Number)
+    const doseTime = new Date()
+    doseTime.setHours(h, m, 0, 0)
+    const msUntil = doseTime.getTime() - now.getTime()
+    if (msUntil < 0) continue
+
+    setTimeout(() => {
+      const title = `💊 Hora de tomar ${dose.name}`
+      const body = `${dose.dose}${dose.instructions ? ' — ' + dose.instructions : ''}`
+      const icon = '/icons/icon-192.png'
+      if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+        navigator.serviceWorker.controller.postMessage({ type: 'SHOW_NOTIFICATION', title, options: { body, icon, badge: icon, tag: dose.id } })
+      } else if ('Notification' in window && Notification.permission === 'granted') {
+        new Notification(title, { body, icon, tag: dose.id })
+      }
+    }, msUntil)
+  }
 }
 
 function getGreeting(): string {
@@ -248,21 +299,30 @@ function ProgressRing({ taken, total }: { taken: number; total: number }) {
 // ─── Dose card ────────────────────────────────────────────────────────────────
 
 function DoseCard({ dose, onToggle }: { dose: DoseItem; onToggle: (id: string) => void }) {
+  const late = dose.status === 'late'
   return (
-    <div className={['bg-white dark:bg-zinc-800 rounded-2xl px-4 py-3.5 shadow-sm flex items-center gap-3 transition-opacity duration-300', dose.taken ? 'opacity-45' : 'opacity-100'].join(' ')}>
+    <div className={[
+      'rounded-2xl px-4 py-3.5 shadow-sm flex items-center gap-3 transition-opacity duration-300',
+      dose.taken ? 'opacity-45 bg-white dark:bg-zinc-800' : late ? 'bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800/50' : 'bg-white dark:bg-zinc-800',
+    ].join(' ')}>
       <div className="w-1 self-stretch rounded-full shrink-0" style={{ backgroundColor: dose.color }} />
       <div className="flex-1 min-w-0">
-        <p className={['text-sm font-semibold text-zinc-800 dark:text-zinc-100 leading-snug', dose.taken ? 'line-through decoration-zinc-400' : ''].join(' ')}>
+        <p className={['text-sm font-semibold leading-snug', dose.taken ? 'line-through decoration-zinc-400 text-zinc-500 dark:text-zinc-400' : 'text-zinc-800 dark:text-zinc-100'].join(' ')}>
           {dose.name} <span className="font-normal text-zinc-500 dark:text-zinc-400">{dose.dose}</span>
         </p>
         <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-          <span className="text-xs text-zinc-400">🕐 {dose.time}</span>
-          {dose.instructions && <><span className="text-zinc-300 dark:text-zinc-600 text-xs">·</span><span className="text-xs text-zinc-400 truncate">{dose.instructions}</span></>}
+          <span className={['text-xs font-medium', late && !dose.taken ? 'text-amber-600 dark:text-amber-400' : 'text-zinc-400'].join(' ')}>
+            🕐 {dose.time}{late && !dose.taken ? ' · atrasada' : ''}
+          </span>
+          {dose.instructions && !late && <><span className="text-zinc-300 dark:text-zinc-600 text-xs">·</span><span className="text-xs text-zinc-400 truncate">{dose.instructions}</span></>}
         </div>
       </div>
       <button onClick={() => onToggle(dose.id)} aria-label={dose.taken ? 'Marcar como pendiente' : 'Marcar como tomada'}
-        className={['shrink-0 w-8 h-8 rounded-full flex items-center justify-center transition-all duration-200 active:scale-95', dose.taken ? 'bg-[#1D9E75] text-white shadow-sm' : 'border-2 border-zinc-200 dark:border-zinc-600 text-transparent hover:border-[#1D9E75]'].join(' ')}>
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+        className={[
+          'shrink-0 w-8 h-8 rounded-full flex items-center justify-center transition-all duration-200 active:scale-95',
+          dose.taken ? 'bg-[#1D9E75] text-white shadow-sm' : late ? 'border-2 border-amber-400 dark:border-amber-500' : 'border-2 border-zinc-200 dark:border-zinc-600 hover:border-[#1D9E75]',
+        ].join(' ')}>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={dose.taken ? 'white' : late ? '#f59e0b' : '#d1d5db'} strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
       </button>
     </div>
   )
@@ -575,31 +635,68 @@ function HistorialView({ userId }: { userId: string }) {
 
 // ─── HOY view ─────────────────────────────────────────────────────────────────
 
-function HoyView({ medications, doses, onToggle }: { medications: Medication[]; doses: DoseItem[]; onToggle: (id: string) => void }) {
+function HoyView({
+  medications, doses, onToggle, notifPermission, onRequestNotifPermission,
+}: {
+  medications: Medication[]
+  doses: DoseItem[]
+  onToggle: (id: string) => void
+  notifPermission: NotificationPermission | null
+  onRequestNotifPermission: () => void
+}) {
   const [header, setHeader] = useState({ greeting: '', date: '' })
   useEffect(() => { setHeader({ greeting: getGreeting(), date: getDateLabel() }) }, [])
+
   const taken = doses.filter((d) => d.taken)
   const pending = doses.filter((d) => !d.taken)
+  const lateCount = pending.filter((d) => d.status === 'late').length
   const lowStock = medications.filter((m) => m.stock < m.stock_min)
+
+  // Group pending doses by franja horaria
+  const franjaGroups = FRANJAS.map((f) => ({
+    ...f,
+    doses: pending.filter((d) => getFranja(d.time) === f.key),
+  })).filter((f) => f.doses.length > 0)
 
   return (
     <div className="flex-1 overflow-y-auto pb-28 px-4 pt-8">
       <PageHeader title={header.greeting || '\u00A0'} subtitle={header.date || '\u00A0'} />
 
+      {/* Notification permission banner — only show if not yet decided */}
+      {notifPermission === 'default' && (
+        <section className="bg-[#1D9E75]/8 border border-[#1D9E75]/25 rounded-2xl p-4 mb-3 flex gap-3 items-center">
+          <span className="text-[22px] leading-none shrink-0">🔔</span>
+          <div className="flex-1 min-w-0">
+            <p className="text-[13px] font-semibold text-zinc-700 dark:text-zinc-200">¿Activar recordatorios?</p>
+            <p className="text-[12px] text-zinc-500 dark:text-zinc-400 leading-snug">Te avisamos cuando sea hora de tomar cada medicamento</p>
+          </div>
+          <button onClick={onRequestNotifPermission} className="shrink-0 text-[12px] font-semibold text-white bg-[#1D9E75] px-3 py-1.5 rounded-lg active:scale-95 transition-transform">
+            Activar
+          </button>
+        </section>
+      )}
+
+      {/* Progress card */}
       <section className="bg-white dark:bg-zinc-800 rounded-2xl p-5 mb-3 shadow-sm flex items-center gap-5">
         <ProgressRing taken={taken.length} total={doses.length} />
         <div className="flex-1 min-w-0">
           <p className="text-[11px] font-semibold uppercase tracking-widest text-zinc-400 dark:text-zinc-500 mb-1">Progreso del día</p>
           <p className="text-[15px] font-medium text-zinc-700 dark:text-zinc-200 leading-snug">
-            {taken.length === doses.length && doses.length > 0 ? '¡Todo completado!' : `${pending.length} dosis pendiente${pending.length !== 1 ? 's' : ''}`}
+            {taken.length === doses.length && doses.length > 0
+              ? '¡Todo completado! 🎉'
+              : lateCount > 0
+                ? `${lateCount} dosis atrasada${lateCount !== 1 ? 's' : ''}`
+                : `${pending.length} pendiente${pending.length !== 1 ? 's' : ''}`}
           </p>
           <div className="flex gap-2 mt-2 flex-wrap">
             <span className="text-[11px] font-medium bg-[#1D9E75]/10 text-[#1D9E75] rounded-full px-2.5 py-0.5">{taken.length} tomadas</span>
-            <span className="text-[11px] font-medium bg-zinc-100 dark:bg-zinc-700 text-zinc-500 dark:text-zinc-400 rounded-full px-2.5 py-0.5">{pending.length} pendientes</span>
+            {lateCount > 0 && <span className="text-[11px] font-medium bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 rounded-full px-2.5 py-0.5">{lateCount} atrasadas</span>}
+            {pending.length - lateCount > 0 && <span className="text-[11px] font-medium bg-zinc-100 dark:bg-zinc-700 text-zinc-500 dark:text-zinc-400 rounded-full px-2.5 py-0.5">{pending.length - lateCount} pendientes</span>}
           </div>
         </div>
       </section>
 
+      {/* Low stock alert */}
       {lowStock.length > 0 && (
         <section className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 rounded-2xl p-4 mb-3 flex gap-3 items-start">
           <span className="text-[18px] leading-none mt-0.5" aria-hidden>⚠️</span>
@@ -610,8 +707,33 @@ function HoyView({ medications, doses, onToggle }: { medications: Medication[]; 
         </section>
       )}
 
-      {pending.length > 0 && <section className="mb-3"><SectionLabel>Pendientes</SectionLabel><div className="flex flex-col gap-2">{pending.map((d) => <DoseCard key={d.id} dose={d} onToggle={onToggle} />)}</div></section>}
-      {taken.length > 0 && <section className="mb-3"><SectionLabel>Tomadas</SectionLabel><div className="flex flex-col gap-2">{taken.map((d) => <DoseCard key={d.id} dose={d} onToggle={onToggle} />)}</div></section>}
+      {/* Pending doses grouped by franja */}
+      {franjaGroups.map((franja) => (
+        <section key={franja.key} className="mb-4">
+          <SectionLabel>{franja.emoji} {franja.label}</SectionLabel>
+          <div className="flex flex-col gap-2">
+            {franja.doses.map((d) => <DoseCard key={d.id} dose={d} onToggle={onToggle} />)}
+          </div>
+        </section>
+      ))}
+
+      {/* Taken doses */}
+      {taken.length > 0 && (
+        <section className="mb-3">
+          <SectionLabel>✅ Tomadas</SectionLabel>
+          <div className="flex flex-col gap-2">
+            {taken.map((d) => <DoseCard key={d.id} dose={d} onToggle={onToggle} />)}
+          </div>
+        </section>
+      )}
+
+      {/* Empty state */}
+      {doses.length === 0 && (
+        <div className="text-center py-12 text-zinc-400 dark:text-zinc-600">
+          <p className="text-[15px]">No tenés medicamentos cargados</p>
+          <p className="text-[13px] mt-1">Agregá uno en la pestaña Medicación</p>
+        </div>
+      )}
     </div>
   )
 }
@@ -853,6 +975,31 @@ export default function HomePage() {
   const [doses, setDoses] = useState<DoseItem[]>([])
   const [dataLoading, setDataLoading] = useState(false)
   const [activeTab, setActiveTab] = useState('hoy')
+  const [notifPermission, setNotifPermission] = useState<NotificationPermission | null>(null)
+
+  // Register Service Worker
+  useEffect(() => {
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch(() => {})
+    }
+    if ('Notification' in window) {
+      setNotifPermission(Notification.permission)
+    }
+  }, [])
+
+  // Schedule notifications whenever doses change
+  useEffect(() => {
+    if (notifPermission === 'granted' && doses.length > 0) {
+      scheduleNotifications(doses)
+    }
+  }, [doses, notifPermission])
+
+  async function requestNotifPermission() {
+    if (!('Notification' in window)) return
+    const perm = await Notification.requestPermission()
+    setNotifPermission(perm)
+    if (perm === 'granted') scheduleNotifications(doses)
+  }
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -940,7 +1087,7 @@ export default function HomePage() {
     <div className="min-h-dvh bg-[#F6F5F0] dark:bg-zinc-950 flex justify-center">
       <div className="w-full max-w-[390px] flex flex-col min-h-dvh">
         <main className="flex-1 flex flex-col overflow-hidden">
-          {activeTab === 'hoy'        && <HoyView medications={medications} doses={doses} onToggle={toggle} />}
+          {activeTab === 'hoy'        && <HoyView medications={medications} doses={doses} onToggle={toggle} notifPermission={notifPermission} onRequestNotifPermission={requestNotifPermission} />}
           {activeTab === 'medicacion' && <MedicacionView medications={medications} userId={user!.id} onRefresh={() => loadData(user!.id)} onSignOut={handleSignOut} />}
           {activeTab === 'escanear'   && <ScanView userId={user!.id} onMedAdded={() => loadData(user!.id)} />}
         </main>
