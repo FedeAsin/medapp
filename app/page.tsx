@@ -132,11 +132,19 @@ function scheduleNotifications(doses: DoseItem[]) {
   }
 }
 
-function getGreeting(): string {
+function getGreeting(name?: string): string {
   const h = new Date().getHours()
-  if (h >= 6 && h < 12) return 'Buenos días'
-  if (h >= 12 && h < 20) return 'Buenas tardes'
-  return 'Buenas noches'
+  const suffix = name ? `, ${name}` : ''
+  if (h >= 6 && h < 12) return `Buenos días${suffix}`
+  if (h >= 12 && h < 20) return `Buenas tardes${suffix}`
+  return `Buenas noches${suffix}`
+}
+
+function nameFromEmail(email?: string | null): string {
+  if (!email) return ''
+  const prefix = email.split('@')[0]
+  const first = prefix.split(/[._-]/)[0]
+  return first.charAt(0).toUpperCase() + first.slice(1)
 }
 
 function getDateLabel(): string {
@@ -639,16 +647,17 @@ function HistorialView({ userId }: { userId: string }) {
 // ─── HOY view ─────────────────────────────────────────────────────────────────
 
 function HoyView({
-  medications, doses, onToggle, notifPermission, onRequestNotifPermission,
+  medications, doses, onToggle, notifPermission, onRequestNotifPermission, userName,
 }: {
   medications: Medication[]
   doses: DoseItem[]
   onToggle: (id: string) => void
   notifPermission: NotificationPermission | null
   onRequestNotifPermission: () => void
+  userName: string
 }) {
   const [header, setHeader] = useState({ greeting: '', date: '' })
-  useEffect(() => { setHeader({ greeting: getGreeting(), date: getDateLabel() }) }, [])
+  useEffect(() => { setHeader({ greeting: getGreeting(userName), date: getDateLabel() }) }, [userName])
 
   const taken = doses.filter((d) => d.taken)
   const pending = doses.filter((d) => !d.taken)
@@ -1102,7 +1111,7 @@ export default function HomePage() {
     <div className="min-h-dvh bg-bg dark:bg-zinc-950 flex justify-center">
       <div className="w-full max-w-[390px] flex flex-col min-h-dvh">
         <main className="flex-1 flex flex-col overflow-hidden">
-          {activeTab === 'hoy'        && <HoyView medications={medications} doses={doses} onToggle={toggle} notifPermission={notifPermission} onRequestNotifPermission={requestNotifPermission} />}
+          {activeTab === 'hoy'        && <HoyView medications={medications} doses={doses} onToggle={toggle} notifPermission={notifPermission} onRequestNotifPermission={requestNotifPermission} userName={nameFromEmail(user?.email)} />}
           {activeTab === 'medicacion' && <MedicacionView medications={medications} userId={user!.id} onRefresh={() => loadData(user!.id)} onSignOut={handleSignOut} />}
           {activeTab === 'escanear'   && <ScanView userId={user!.id} onMedAdded={() => loadData(user!.id)} />}
         </main>

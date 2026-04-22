@@ -1,5 +1,4 @@
 @import "tailwindcss";
-@import url("https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap");
 
 /* ─────────────────────────────────────────────────────────────────────────────
    DESIGN TOKENS
@@ -84,7 +83,7 @@
   --radius-lg:   24px;
   --radius-full: 9999px;
 
-  --font-sans: "Poppins", sans-serif;
+  --font-sans: var(--font-poppins), sans-serif;
 }
 
 /* ── Tokens dinámicos (dark-mode aware) → referencian CSS vars de :root ───── */
