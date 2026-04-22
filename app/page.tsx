@@ -3,6 +3,9 @@
 import { useState, useEffect, useRef } from 'react'
 import type { User } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
+import { Spinner } from '../components/ui/Spinner'
+import { Alert } from '../components/ui/Alert'
+import { Badge } from '../components/ui/Badge'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -209,7 +212,7 @@ function PageHeader({ title, subtitle }: { title: string; subtitle?: string }) {
   )
 }
 
-const inputCls = 'w-full h-11 px-3 rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-[14px] text-zinc-800 dark:text-zinc-100 outline-none focus:border-[#1D9E75] transition-colors'
+const inputCls = 'w-full h-11 px-3 rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-[14px] text-zinc-800 dark:text-zinc-100 outline-none focus:border-primary transition-colors'
 
 function Field({ label, children, className }: { label: string; children: React.ReactNode; className?: string }) {
   return (
@@ -247,10 +250,10 @@ function LoginView() {
   }
 
   return (
-    <div className="min-h-dvh bg-[#F6F5F0] dark:bg-zinc-950 flex items-center justify-center px-5">
+    <div className="min-h-dvh bg-bg dark:bg-zinc-950 flex items-center justify-center px-5">
       <div className="w-full max-w-[360px]">
         <div className="flex flex-col items-center mb-8">
-          <div className="w-16 h-16 rounded-2xl bg-[#1D9E75] flex items-center justify-center mb-4 shadow-lg">
+          <div className="w-16 h-16 rounded-2xl bg-primary flex items-center justify-center mb-4 shadow-lg">
             <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M10.5 20.5 3.5 13.5a5 5 0 0 1 7.07-7.07l7 7a5 5 0 0 1-7.07 7.07Z" /><line x1="8.5" y1="11.5" x2="15.5" y2="11.5" /></svg>
           </div>
           <h1 className="text-[26px] font-bold tracking-tight text-zinc-800 dark:text-zinc-100">MedApp</h1>
@@ -262,15 +265,15 @@ function LoginView() {
             <Field label="Email"><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="tu@email.com" autoComplete="email" className={inputCls} /></Field>
             <Field label="Contraseña"><input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder={isSignUp ? 'Mínimo 6 caracteres' : '••••••••'} autoComplete={isSignUp ? 'new-password' : 'current-password'} className={inputCls} /></Field>
             {error && <p className="text-[13px] text-red-500 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800/50 rounded-xl px-3 py-2.5">{error}</p>}
-            {successMsg && <p className="text-[13px] text-[#1D9E75] bg-[#1D9E75]/8 border border-[#1D9E75]/25 rounded-xl px-3 py-2.5">{successMsg}</p>}
-            <button type="submit" disabled={loading} className="w-full py-3.5 rounded-xl bg-[#1D9E75] text-white text-[15px] font-semibold mt-1 transition-all active:scale-[0.98] disabled:opacity-50 shadow-sm">
+            {successMsg && <p className="text-[13px] text-primary bg-primary/8 border border-primary/25 rounded-xl px-3 py-2.5">{successMsg}</p>}
+            <button type="submit" disabled={loading} className="w-full py-3.5 rounded-xl bg-primary text-white text-[15px] font-semibold mt-1 transition-all active:scale-[0.98] disabled:opacity-50 shadow-sm">
               {loading ? 'Cargando…' : isSignUp ? 'Crear cuenta' : 'Iniciar sesión'}
             </button>
           </form>
         </div>
         <p className="text-center text-[13px] text-zinc-400 dark:text-zinc-500 mt-5">
           {isSignUp ? '¿Ya tenés cuenta?' : '¿No tenés cuenta?'}{' '}
-          <button onClick={() => { setIsSignUp(!isSignUp); setError(''); setSuccessMsg('') }} className="text-[#1D9E75] font-semibold">{isSignUp ? 'Iniciar sesión' : 'Crear cuenta'}</button>
+          <button onClick={() => { setIsSignUp(!isSignUp); setError(''); setSuccessMsg('') }} className="text-primary font-semibold">{isSignUp ? 'Iniciar sesión' : 'Crear cuenta'}</button>
         </p>
       </div>
     </div>
@@ -286,7 +289,7 @@ function ProgressRing({ taken, total }: { taken: number; total: number }) {
     <div className="relative shrink-0" style={{ width: SIZE, height: SIZE }}>
       <svg width={SIZE} height={SIZE} className="-rotate-90" aria-hidden>
         <circle cx={SIZE/2} cy={SIZE/2} r={R} fill="none" stroke="#E5E7EB" strokeWidth={SW} className="dark:stroke-zinc-700" />
-        <circle cx={SIZE/2} cy={SIZE/2} r={R} fill="none" stroke="#1D9E75" strokeWidth={SW} strokeDasharray={C} strokeDashoffset={offset} strokeLinecap="round" style={{ transition: 'stroke-dashoffset 0.5s ease' }} />
+        <circle cx={SIZE/2} cy={SIZE/2} r={R} fill="none" stroke="var(--clr-primary)" strokeWidth={SW} strokeDasharray={C} strokeDashoffset={offset} strokeLinecap="round" style={{ transition: 'stroke-dashoffset 0.5s ease' }} />
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
         <span className="text-[22px] font-bold leading-none text-zinc-800 dark:text-zinc-100">{taken}<span className="text-sm font-normal text-zinc-400">/{total}</span></span>
@@ -320,7 +323,7 @@ function DoseCard({ dose, onToggle }: { dose: DoseItem; onToggle: (id: string) =
       <button onClick={() => onToggle(dose.id)} aria-label={dose.taken ? 'Marcar como pendiente' : 'Marcar como tomada'}
         className={[
           'shrink-0 w-8 h-8 rounded-full flex items-center justify-center transition-all duration-200 active:scale-95',
-          dose.taken ? 'bg-[#1D9E75] text-white shadow-sm' : late ? 'border-2 border-amber-400 dark:border-amber-500' : 'border-2 border-zinc-200 dark:border-zinc-600 hover:border-[#1D9E75]',
+          dose.taken ? 'bg-primary text-white shadow-sm' : late ? 'border-2 border-amber-400 dark:border-amber-500' : 'border-2 border-zinc-200 dark:border-zinc-600 hover:border-primary',
         ].join(' ')}>
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={dose.taken ? 'white' : late ? '#f59e0b' : '#d1d5db'} strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
       </button>
@@ -376,7 +379,7 @@ function MedicationCard({ med, onEdit, onDelete }: {
           </span>
         </div>
         <div className="h-2 bg-zinc-100 dark:bg-zinc-700 rounded-full overflow-hidden">
-          <div className={['h-full rounded-full transition-all duration-500', lowStock ? 'bg-red-400' : 'bg-[#1D9E75]'].join(' ')} style={{ width: `${pct * 100}%` }} />
+          <div className={['h-full rounded-full transition-all duration-500', lowStock ? 'bg-red-400' : 'bg-primary'].join(' ')} style={{ width: `${pct * 100}%` }} />
         </div>
       </div>
 
@@ -472,7 +475,7 @@ function MedSheet({ userId, editMed, onClose, onSaved }: {
                   {form.times.length > 1 && <button type="button" onClick={() => removeTime(i)} className="text-red-400 text-[20px] leading-none w-8 h-8 flex items-center justify-center">×</button>}
                 </div>
               ))}
-              <button type="button" onClick={addTime} className="text-[13px] text-[#1D9E75] font-medium text-left">+ Agregar horario</button>
+              <button type="button" onClick={addTime} className="text-[13px] text-primary font-medium text-left">+ Agregar horario</button>
             </div>
           </Field>
 
@@ -493,7 +496,7 @@ function MedSheet({ userId, editMed, onClose, onSaved }: {
 
           {error && <p className="text-[13px] text-red-500">{error}</p>}
 
-          <button type="submit" disabled={saving} className="w-full py-3.5 rounded-xl bg-[#1D9E75] text-white text-[15px] font-semibold mt-1 transition-all active:scale-[0.98] disabled:opacity-50">
+          <button type="submit" disabled={saving} className="w-full py-3.5 rounded-xl bg-primary text-white text-[15px] font-semibold mt-1 transition-all active:scale-[0.98] disabled:opacity-50">
             {saving ? 'Guardando…' : isEdit ? 'Guardar cambios' : 'Guardar medicamento'}
           </button>
         </form>
@@ -554,14 +557,14 @@ function HistorialView({ userId }: { userId: string }) {
 
   function cellColor(count: number): string {
     if (count === 0) return 'bg-zinc-100 dark:bg-zinc-700/60'
-    if (count === 1) return 'bg-[#1D9E75]/25'
-    if (count <= 3) return 'bg-[#1D9E75]/55'
-    return 'bg-[#1D9E75]'
+    if (count === 1) return 'bg-primary/25'
+    if (count <= 3) return 'bg-primary/55'
+    return 'bg-primary'
   }
 
   if (loading) return (
     <div className="flex items-center justify-center py-16">
-      <div className="w-8 h-8 rounded-full border-[3px] border-[#1D9E75]/20 border-t-[#1D9E75] spinner" />
+      <Spinner size="sm" />
     </div>
   )
 
@@ -584,7 +587,7 @@ function HistorialView({ userId }: { userId: string }) {
       {/* Stats */}
       <div className="flex gap-3 mb-5">
         <div className="flex-1 bg-white dark:bg-zinc-800 rounded-2xl p-4 shadow-sm text-center">
-          <p className="text-[26px] font-bold text-[#1D9E75]">{streak}</p>
+          <p className="text-[26px] font-bold text-primary">{streak}</p>
           <p className="text-[11px] font-medium text-zinc-400 uppercase tracking-wide mt-0.5">día{streak !== 1 ? 's' : ''} racha</p>
         </div>
         <div className="flex-1 bg-white dark:bg-zinc-800 rounded-2xl p-4 shadow-sm text-center">
@@ -612,7 +615,7 @@ function HistorialView({ userId }: { userId: string }) {
               const count = countByDate.get(cell.date) ?? 0
               return (
                 <div key={ci}
-                  className={['aspect-square rounded-md transition-all', cellColor(count), cell.isToday ? 'ring-2 ring-[#1D9E75] ring-offset-1' : ''].join(' ')}
+                  className={['aspect-square rounded-md transition-all', cellColor(count), cell.isToday ? 'ring-2 ring-primary ring-offset-1' : ''].join(' ')}
                   title={`${cell.date}: ${count} dosis`}
                 />
               )
@@ -623,7 +626,7 @@ function HistorialView({ userId }: { userId: string }) {
         {/* Legend */}
         <div className="flex items-center gap-2 mt-3 justify-end">
           <span className="text-[10px] text-zinc-400">Menos</span>
-          {['bg-zinc-100 dark:bg-zinc-700/60', 'bg-[#1D9E75]/25', 'bg-[#1D9E75]/55', 'bg-[#1D9E75]'].map((c, i) => (
+          {['bg-zinc-100 dark:bg-zinc-700/60', 'bg-primary/25', 'bg-primary/55', 'bg-primary'].map((c, i) => (
             <div key={i} className={`w-3 h-3 rounded-sm ${c}`} />
           ))}
           <span className="text-[10px] text-zinc-400">Más</span>
@@ -664,16 +667,19 @@ function HoyView({
 
       {/* Notification permission banner — only show if not yet decided */}
       {notifPermission === 'default' && (
-        <section className="bg-[#1D9E75]/8 border border-[#1D9E75]/25 rounded-2xl p-4 mb-3 flex gap-3 items-center">
-          <span className="text-[22px] leading-none shrink-0">🔔</span>
-          <div className="flex-1 min-w-0">
-            <p className="text-[13px] font-semibold text-zinc-700 dark:text-zinc-200">¿Activar recordatorios?</p>
-            <p className="text-[12px] text-zinc-500 dark:text-zinc-400 leading-snug">Te avisamos cuando sea hora de tomar cada medicamento</p>
-          </div>
-          <button onClick={onRequestNotifPermission} className="shrink-0 text-[12px] font-semibold text-white bg-[#1D9E75] px-3 py-1.5 rounded-lg active:scale-95 transition-transform">
-            Activar
-          </button>
-        </section>
+        <Alert
+          variant="info"
+          icon="🔔"
+          title="¿Activar recordatorios?"
+          description="Te avisamos cuando sea hora de tomar cada medicamento"
+          align="center"
+          action={
+            <button onClick={onRequestNotifPermission} className="text-[length:var(--fs-caption)] font-semibold text-white bg-primary px-3 py-1.5 rounded-lg active:scale-95 transition-transform">
+              Activar
+            </button>
+          }
+          className="mb-3"
+        />
       )}
 
       {/* Progress card */}
@@ -689,22 +695,26 @@ function HoyView({
                 : `${pending.length} pendiente${pending.length !== 1 ? 's' : ''}`}
           </p>
           <div className="flex gap-2 mt-2 flex-wrap">
-            <span className="text-[11px] font-medium bg-[#1D9E75]/10 text-[#1D9E75] rounded-full px-2.5 py-0.5">{taken.length} tomadas</span>
-            {lateCount > 0 && <span className="text-[11px] font-medium bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 rounded-full px-2.5 py-0.5">{lateCount} atrasadas</span>}
-            {pending.length - lateCount > 0 && <span className="text-[11px] font-medium bg-zinc-100 dark:bg-zinc-700 text-zinc-500 dark:text-zinc-400 rounded-full px-2.5 py-0.5">{pending.length - lateCount} pendientes</span>}
+            <Badge variant="success">{taken.length} tomadas</Badge>
+            {lateCount > 0 && <Badge variant="warning">{lateCount} atrasadas</Badge>}
+            {pending.length - lateCount > 0 && <Badge variant="neutral">{pending.length - lateCount} pendientes</Badge>}
           </div>
         </div>
       </section>
 
       {/* Low stock alert */}
       {lowStock.length > 0 && (
-        <section className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 rounded-2xl p-4 mb-3 flex gap-3 items-start">
-          <span className="text-[18px] leading-none mt-0.5" aria-hidden>⚠️</span>
-          <div className="flex-1 min-w-0">
-            <p className="text-[13px] font-semibold text-amber-800 dark:text-amber-400 mb-0.5">Stock bajo</p>
-            {lowStock.map((m) => <p key={m.id} className="text-[12px] text-amber-700 dark:text-amber-500 leading-snug">{m.name} {m.dose} — <strong>{m.stock}</strong> unidades restantes</p>)}
-          </div>
-        </section>
+        <Alert
+          variant="warning"
+          icon="⚠️"
+          title="Stock bajo"
+          description={
+            <>{lowStock.map((m) => (
+              <p key={m.id}>{m.name} {m.dose} — <strong>{m.stock}</strong> unidades restantes</p>
+            ))}</>
+          }
+          className="mb-3"
+        />
       )}
 
       {/* Pending doses grouped by franja */}
@@ -786,7 +796,7 @@ function MedicacionView({ medications, userId, onRefresh, onSignOut }: {
               <MedicationCard key={med.id} med={med} onEdit={(m) => setSheetMed(m)} onDelete={handleDelete} />
             ))}
           </div>
-          <button onClick={() => setSheetMed({})} className="w-full py-4 rounded-2xl border-2 border-dashed border-zinc-300 dark:border-zinc-700 text-zinc-400 dark:text-zinc-500 text-[14px] font-medium flex items-center justify-center gap-2 transition-colors hover:border-[#1D9E75] hover:text-[#1D9E75] active:scale-[0.98]">
+          <button onClick={() => setSheetMed({})} className="w-full py-4 rounded-2xl border-2 border-dashed border-zinc-300 dark:border-zinc-700 text-zinc-400 dark:text-zinc-500 text-[14px] font-medium flex items-center justify-center gap-2 transition-colors hover:border-primary hover:text-primary active:scale-[0.98]">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
             Agregar medicamento
           </button>
@@ -877,7 +887,7 @@ function ScanView({ userId, onMedAdded }: { userId: string; onMedAdded: () => vo
 
       {state === 'idle' && (
         <button onClick={() => fileInputRef.current?.click()}
-          className="w-full aspect-[4/3] rounded-2xl border-2 border-dashed border-zinc-300 dark:border-zinc-700 flex flex-col items-center justify-center gap-4 bg-white dark:bg-zinc-800/60 transition-all hover:border-[#1D9E75] hover:bg-[#1D9E75]/5 active:scale-[0.99] shadow-sm">
+          className="w-full aspect-[4/3] rounded-2xl border-2 border-dashed border-zinc-300 dark:border-zinc-700 flex flex-col items-center justify-center gap-4 bg-white dark:bg-zinc-800/60 transition-all hover:border-primary hover:bg-primary/5 active:scale-[0.99] shadow-sm">
           <div className="w-20 h-20 rounded-2xl bg-zinc-100 dark:bg-zinc-700 flex items-center justify-center"><IconCamera /></div>
           <div className="text-center">
             <p className="text-[15px] font-semibold text-zinc-600 dark:text-zinc-300">Tocar para sacar foto</p>
@@ -891,7 +901,7 @@ function ScanView({ userId, onMedAdded }: { userId: string; onMedAdded: () => vo
           {preview && <img src={preview} alt="Preview" className="w-full h-full object-cover" />}
           {state === 'loading' && (
             <div className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center gap-3">
-              <div className="w-10 h-10 rounded-full border-[3px] border-white/20 border-t-white spinner" />
+              <Spinner variant="white" />
               <p className="text-white text-[14px] font-medium">Analizando con IA…</p>
             </div>
           )}
@@ -901,10 +911,12 @@ function ScanView({ userId, onMedAdded }: { userId: string; onMedAdded: () => vo
       {state === 'error' && (
         <div className="flex flex-col gap-3">
           {preview && <div className="w-full aspect-[4/3] rounded-2xl overflow-hidden shadow-sm"><img src={preview} alt="Preview" className="w-full h-full object-cover opacity-50" /></div>}
-          <div className="bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800/50 rounded-2xl p-4 flex gap-3">
-            <span className="text-[18px]">❌</span>
-            <div><p className="text-[13px] font-semibold text-red-700 dark:text-red-400 mb-0.5">No se pudo identificar</p><p className="text-[12px] text-red-600 dark:text-red-500">{result?.error}</p></div>
-          </div>
+          <Alert
+            variant="error"
+            icon="❌"
+            title="No se pudo identificar"
+            description={result?.error}
+          />
           <button onClick={reset} className="w-full py-3.5 rounded-xl border-2 border-zinc-200 dark:border-zinc-700 text-[14px] font-semibold text-zinc-600 dark:text-zinc-300 active:scale-[0.98]">Intentar de nuevo</button>
         </div>
       )}
@@ -913,10 +925,13 @@ function ScanView({ userId, onMedAdded }: { userId: string; onMedAdded: () => vo
         <div className="flex flex-col gap-3">
           {preview && <div className="w-full aspect-[4/3] rounded-2xl overflow-hidden shadow-sm"><img src={preview} alt="Preview" className="w-full h-full object-cover" /></div>}
 
-          <div className="bg-[#1D9E75]/10 border border-[#1D9E75]/25 rounded-2xl p-4 flex items-center gap-3">
-            <div className="w-8 h-8 rounded-full bg-[#1D9E75] flex items-center justify-center shrink-0"><IconCheck /></div>
-            <div><p className="text-[14px] font-semibold text-[#1D9E75]">Medicamento identificado</p><p className="text-[12px] text-[#1D9E75]/70">Revisá los datos antes de agregar</p></div>
-          </div>
+          <Alert
+            variant="success"
+            icon={<div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center"><IconCheck /></div>}
+            title="Medicamento identificado"
+            description="Revisá los datos antes de agregar"
+            align="center"
+          />
 
           <div className="bg-white dark:bg-zinc-800 rounded-2xl px-4 shadow-sm divide-y divide-zinc-100 dark:divide-zinc-700">
             {[
@@ -935,7 +950,7 @@ function ScanView({ userId, onMedAdded }: { userId: string; onMedAdded: () => vo
 
           <div className="flex gap-2.5 mt-1">
             <button onClick={reset} className="flex-1 py-3.5 rounded-xl border-2 border-zinc-200 dark:border-zinc-700 text-[14px] font-semibold text-zinc-600 dark:text-zinc-300 active:scale-[0.98]">Reintentar</button>
-            <button onClick={() => setShowAddForm(true)} className="flex-1 py-3.5 rounded-xl bg-[#1D9E75] text-white text-[14px] font-semibold active:scale-[0.98] shadow-sm">Agregar a mis meds</button>
+            <button onClick={() => setShowAddForm(true)} className="flex-1 py-3.5 rounded-xl bg-primary text-white text-[14px] font-semibold active:scale-[0.98] shadow-sm">Agregar a mis meds</button>
           </div>
         </div>
       )}
@@ -956,7 +971,7 @@ function TabBar({ active, onChange }: { active: string; onChange: (id: string) =
         const isActive = active === id
         return (
           <button key={id} onClick={() => onChange(id)} aria-current={isActive ? 'page' : undefined}
-            className={['flex flex-col items-center gap-0.5 flex-1 py-1.5 transition-colors duration-150', isActive ? 'text-[#1D9E75]' : 'text-zinc-400 dark:text-zinc-500'].join(' ')}>
+            className={['flex flex-col items-center gap-0.5 flex-1 py-1.5 transition-colors duration-150', isActive ? 'text-primary' : 'text-zinc-400 dark:text-zinc-500'].join(' ')}>
             <Icon active={isActive} />
             <span className="text-[10px] font-medium">{label}</span>
           </button>
@@ -1075,8 +1090,8 @@ export default function HomePage() {
 
   if (authState === 'loading' || (dataLoading && medications.length === 0)) {
     return (
-      <div className="min-h-dvh bg-[#F6F5F0] dark:bg-zinc-950 flex items-center justify-center">
-        <div className="w-10 h-10 rounded-full border-[3px] border-[#1D9E75]/20 border-t-[#1D9E75] spinner" />
+      <div className="min-h-dvh bg-bg dark:bg-zinc-950 flex items-center justify-center">
+        <Spinner />
       </div>
     )
   }
@@ -1084,7 +1099,7 @@ export default function HomePage() {
   if (authState === 'unauthenticated') return <LoginView />
 
   return (
-    <div className="min-h-dvh bg-[#F6F5F0] dark:bg-zinc-950 flex justify-center">
+    <div className="min-h-dvh bg-bg dark:bg-zinc-950 flex justify-center">
       <div className="w-full max-w-[390px] flex flex-col min-h-dvh">
         <main className="flex-1 flex flex-col overflow-hidden">
           {activeTab === 'hoy'        && <HoyView medications={medications} doses={doses} onToggle={toggle} notifPermission={notifPermission} onRequestNotifPermission={requestNotifPermission} />}

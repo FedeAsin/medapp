@@ -1,33 +1,120 @@
 @import "tailwindcss";
 @import url("https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap");
 
-@theme {
-  /* Colors */
-  --color-primary: #F5C518;
-  --color-secondary: #1A1A1A;
-  --color-accent-blue: #4A90D9;
-  --color-accent-green: #2ECC71;
-  --color-accent-red: #E8505B;
-  --color-accent-pink: #F2B8C6;
-  --color-surface: #FFFFFF;
-  --color-surface-alt: #F5F5F0;
-  --color-muted: #9E9E9E;
+/* ─────────────────────────────────────────────────────────────────────────────
+   DESIGN TOKENS
+   Fuente de verdad de color, tipografía, spacing y touch targets.
+   Los tokens en :root son dark-mode aware.
+   @theme inline los expone como utilidades Tailwind (bg-primary, text-primary…)
+───────────────────────────────────────────────────────────────────────────── */
 
-  /* Border radius */
-  --radius-sm: 12px;
-  --radius-md: 16px;
-  --radius-lg: 24px;
+:root {
+  /* ── Brand ──────────────────────────────────────────────────────────────── */
+  --clr-primary:        #1D9E75;
+
+  /* ── Accent ─────────────────────────────────────────────────────────────── */
+  --clr-accent-blue:    #4A90D9;
+  --clr-accent-green:   #2ECC71;
+  --clr-accent-red:     #E8505B;
+  --clr-accent-pink:    #F2B8C6;
+
+  /* ── Neutros (light) ────────────────────────────────────────────────────── */
+  --clr-bg:             #F6F5F0;
+  --clr-surface:        #FFFFFF;
+  --clr-surface-raised: #F4F4F5;
+  --clr-muted:          #9E9E9E;
+
+  /* ── Warning ────────────────────────────────────────────────────────────── */
+  --clr-warning-bg:     #FEF3C7;
+  --clr-warning-border: #FDE68A;
+  --clr-warning-text:   #92400E;
+
+  /* ── Error ──────────────────────────────────────────────────────────────── */
+  --clr-error:          #EF4444;
+  --clr-error-bg:       #FEF2F2;
+  --clr-error-border:   #FECACA;
+  --clr-error-text:     #991B1B;
+
+  /* ── Success ────────────────────────────────────────────────────────────── */
+  --clr-success-bg:     #D1FAE5;
+  --clr-success-border: #6EE7B7;
+  --clr-success-text:   #065F46;
+
+  /* ── Escala tipográfica ──────────────────────────────────────────────────── */
+  --fs-overline: 0.6875rem;  /* 11px — section labels, tags        */
+  --fs-caption:  0.75rem;    /* 12px — helper text, sub-labels     */
+  --fs-body-sm:  0.8125rem;  /* 13px — body secundario, alertas    */
+  --fs-body:     0.875rem;   /* 14px — body principal              */
+  --fs-body-lg:  0.9375rem;  /* 15px — body destacado              */
+  --fs-label:    1.0625rem;  /* 17px — form headings               */
+  --fs-title:    1.125rem;   /* 18px — títulos de modal/sheet      */
+  --fs-heading:  1.375rem;   /* 22px — heading secundario          */
+  --fs-display:  1.625rem;   /* 26px — page heading principal      */
+
+  /* ── Touch targets (WCAG 2.5.5) ─────────────────────────────────────────── */
+  --touch-sm: 2.25rem;   /* 36px — acciones secundarias              */
+  --touch-md: 2.75rem;   /* 44px — mínimo recomendado por WCAG       */
+  --touch-lg: 3rem;      /* 48px — acciones primarias                */
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --clr-bg:             #09090b;
+    --clr-surface:        #18181b;
+    --clr-surface-raised: #27272a;
+
+    --clr-warning-bg:     rgba(146, 64, 10, 0.2);
+    --clr-warning-border: rgba(245, 158, 11, 0.3);
+    --clr-warning-text:   #FCD34D;
+
+    --clr-error-bg:       rgba(127, 29, 29, 0.2);
+    --clr-error-border:   rgba(239, 68, 68, 0.3);
+    --clr-error-text:     #FCA5A5;
+
+    --clr-success-bg:     rgba(6, 78, 59, 0.2);
+    --clr-success-border: rgba(110, 231, 183, 0.3);
+    --clr-success-text:   #6EE7B7;
+  }
+}
+
+/* ── Tokens estáticos (no varían con dark mode) → utilidades Tailwind directas */
+@theme {
+  --radius-sm:   12px;
+  --radius-md:   16px;
+  --radius-lg:   24px;
   --radius-full: 9999px;
 
-  /* Font family */
   --font-sans: "Poppins", sans-serif;
 }
 
+/* ── Tokens dinámicos (dark-mode aware) → referencian CSS vars de :root ───── */
+@theme inline {
+  --color-primary:        var(--clr-primary);
+  --color-bg:             var(--clr-bg);
+  --color-surface:        var(--clr-surface);
+  --color-surface-raised: var(--clr-surface-raised);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   BASE
+───────────────────────────────────────────────────────────────────────────── */
+
 body {
-  background: var(--color-surface);
-  color: var(--color-secondary);
+  background: var(--clr-bg);
+  color: inherit;
   font-family: var(--font-sans);
 }
+
+/* Focus ring accesible — único lugar donde se define */
+:focus-visible {
+  outline: 2px solid var(--clr-primary);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   ANIMATIONS
+───────────────────────────────────────────────────────────────────────────── */
 
 @keyframes typing-dot {
   0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
@@ -46,4 +133,9 @@ body {
 }
 .spinner {
   animation: spin 0.9s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner,
+  .typing-dot { animation: none; }
 }
